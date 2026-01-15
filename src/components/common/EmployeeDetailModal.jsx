@@ -1,4 +1,5 @@
 // src/components/common/EmployeeDetailModal.jsx
+
 import React from 'react';
 import { X, Award, Mail, Phone, MapPin, Briefcase, Calendar, Users, DollarSign, Heart, GraduationCap } from 'lucide-react';
 
