@@ -8,11 +8,11 @@ import Dashboard from './views/Dashboard';
 import Employees from './views/Employees';
 import Payroll from './views/Payroll';
 // Diğerlerini de import et:
-// import TimeTracking from './views/TimeTracking';
-// import LeaveManagement from './views/LeaveManagement';
-// import Benefits from './views/Benefits';
-// import Documents from './views/Documents';
-// import Settings from './views/Settings';
+import TimeTracking from './views/TimeTracking';
+ import LeaveManagement from './views/LeaveManagement';
+ import Benefits from './views/Benefits';
+ import Documents from './views/Documents';
+import Settings from './views/Settings';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -23,11 +23,11 @@ export default function App() {
       case 'dashboard': return <Dashboard />;
       case 'employees': return <Employees />;
       case 'payroll': return <Payroll />;
-      // case 'time': return <TimeTracking />;
-      // case 'leave': return <LeaveManagement />;
-      // case 'benefits': return <Benefits />;
-      // case 'documents': return <Documents />;
-      // case 'settings': return <Settings />;
+      case 'time': return <TimeTracking />;
+      case 'leave': return <LeaveManagement />;
+      case 'benefits': return <Benefits />;
+      case 'documents': return <Documents />;
+      case 'settings': return <Settings />;
       default: return <Dashboard />;
     }
   };
