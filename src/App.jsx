@@ -161,11 +161,11 @@ export default function App() {
       case 'recruitment': return <Recruitment />;
       
       case 'time-tracking': 
-        // 👇 currentUserId bilgisini gönderiyoruz
-        return <TimeTracking currentUserId={currentUser?.id} />;
+        // 👇 BURASI KRİTİK: userRole'ü göndermezsek yönetici olduğunu anlamaz!
+        return <TimeTracking currentUserId={currentUser?.id} userRole={userRole} />;
       
       case 'leave': 
-        // 👇 currentUserId ve Rol bilgisini gönderiyoruz
+        // 👇 Aynı şekilde buraya da ekliyoruz
         return <LeaveManagement currentUserId={currentUser?.id} userRole={userRole} />;
       
       case 'settings': 
