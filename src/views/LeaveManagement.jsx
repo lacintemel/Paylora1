@@ -1,67 +1,116 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabase'; 
 import { 
-  Calendar, 
-  Check, 
-  X, 
-  Clock, 
-  Plus, 
-  Filter,
-  CheckCircle,
-  XCircle,
-  AlertCircle
+  Calendar, Check, X, Clock, Plus, Filter, CheckCircle, XCircle, Loader2
 } from 'lucide-react';
 
-export default function LeaveManagement() {
-  // --- MOCK VERİLER (Başlangıç Durumu) ---
-  const initialLeaves = [
-    { id: 1, employee: 'Ali Yılmaz', type: 'Yıllık İzin', dates: '20-24 Oca', days: 5, status: 'Pending', avatar: 'AY', desc: 'Aile ziyareti için.' },
-    { id: 2, employee: 'Ayşe Demir', type: 'Hastalık', dates: '15 Oca', days: 1, status: 'Approved', avatar: 'AD', desc: 'Grip raporlu.' },
-    { id: 3, employee: 'Mehmet Kaya', type: 'Mazeret', dates: '01 Şub', days: 1, status: 'Rejected', avatar: 'MK', desc: 'Şahsi işler.' },
-    { id: 4, employee: 'Zeynep Çelik', type: 'Yıllık İzin', dates: '10-17 Şub', days: 7, status: 'Pending', avatar: 'ZÇ', desc: 'Kış tatili.' },
-  ];
-
+export default function LeaveManagement({ currentUserId, userRole }) {
   // --- STATE ---
-  const [leaves, setLeaves] = useState(initialLeaves);
+  const [leaves, setLeaves] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   
   // Yeni Talep Formu
   const [formData, setFormData] = useState({ type: 'Yıllık İzin', start: '', end: '', desc: '' });
 
-  // --- İŞLEVLER ---
+  // YÖNETİCİ KONTROLÜ
+  const isManager = ['hr', 'general_manager'].includes(userRole);
 
-  // 1. Onaylama / Reddetme
-  const handleStatusChange = (id, newStatus) => {
-    const updatedLeaves = leaves.map(leave => 
-      leave.id === id ? { ...leave, status: newStatus } : leave
-    );
-    setLeaves(updatedLeaves);
+  // --- 1. VERİ ÇEKME ---
+  useEffect(() => {
+    if (currentUserId) fetchLeaves();
+  }, [currentUserId, userRole]);
+
+  const fetchLeaves = async () => {
+    setLoading(true);
+    let query = supabase
+      .from('leave_requests')
+      .select(`
+        *,
+        employees ( name, avatar ) 
+      `) // İlişkili tablodan isim ve avatar çekiyoruz
+      .order('created_at', { ascending: false });
+
+    // Eğer yönetici değilse sadece kendi izinlerini görsün
+    if (!isManager) {
+      query = query.eq('employee_id', currentUserId);
+    }
+
+    const { data, error } = await query;
+    if (error) console.error("Hata:", error);
+    else setLeaves(data || []);
+    
+    setLoading(false);
   };
 
-  // 2. Yeni Talep Oluşturma
-  const handleCreateRequest = (e) => {
+  // --- 2. DURUM GÜNCELLEME (YÖNETİCİ) ---
+  const handleStatusChange = async (id, newStatus) => {
+    // Optimistik güncelleme (Arayüzde hemen göster)
+    setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: newStatus } : l));
+
+    const { error } = await supabase
+      .from('leave_requests')
+      .update({ status: newStatus })
+      .eq('id', id);
+
+    if (error) {
+        alert("Güncelleme başarısız!");
+        fetchLeaves(); // Hata varsa geri al
+    }
+  };
+
+  // --- 3. YENİ TALEP OLUŞTURMA ---
+  const handleCreateRequest = async (e) => {
     e.preventDefault();
-    const newRequest = {
-      id: leaves.length + 1,
-      employee: 'Laci Temel', // Şu anki kullanıcı
-      avatar: 'LT',
-      type: formData.type,
-      dates: `${formData.start.slice(5)} / ${formData.end.slice(5)}`, // Basit tarih formatı
-      days: 3, // Hesaplama ile uğraşmamak için sabit/rastgele
-      status: 'Pending',
-      desc: formData.desc
-    };
-    setLeaves([newRequest, ...leaves]);
-    setIsModalOpen(false);
-    setFormData({ type: 'Yıllık İzin', start: '', end: '', desc: '' });
+    setSubmitting(true);
+
+    const { error } = await supabase.from('leave_requests').insert([{
+      employee_id: currentUserId,
+      leave_type: formData.type,
+      start_date: formData.start,
+      end_date: formData.end,
+      reason: formData.desc,
+      status: 'Pending'
+    }]);
+
+    if (error) {
+      alert('Hata: ' + error.message);
+    } else {
+      setIsModalOpen(false);
+      setFormData({ type: 'Yıllık İzin', start: '', end: '', desc: '' });
+      fetchLeaves();
+    }
+    setSubmitting(false);
   };
 
-  // 3. Filtreleme
+  // --- FİLTRELEME VE HESAPLAMA ---
   const filteredLeaves = filterStatus === 'All' 
     ? leaves 
     : leaves.filter(l => l.status === filterStatus);
 
   const pendingCount = leaves.filter(l => l.status === 'Pending').length;
+
+  // Avatar Helper
+  const getAvatarContent = (leave) => {
+    const emp = leave.employees; // İlişkili tablo
+    if (emp?.avatar && emp.avatar.startsWith('http')) {
+        return <img src={emp.avatar} alt="Avatar" className="w-full h-full object-cover" />;
+    }
+    const name = emp?.name || 'Unknown';
+    return name.slice(0, 2).toUpperCase();
+  };
+
+  // Gün hesaplama
+  const calculateDays = (start, end) => {
+    const s = new Date(start);
+    const e = new Date(end);
+    const diffTime = Math.abs(e - s);
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
+  };
+
+  if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-gray-400"/></div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -70,24 +119,27 @@ export default function LeaveManagement() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">İzin Yönetimi</h1>
-          <p className="text-gray-500">Onay bekleyen <span className="font-bold text-orange-600">{pendingCount}</span> talep var.</p>
+          <p className="text-gray-500">
+             {isManager 
+               ? <span>Onay bekleyen <span className="font-bold text-orange-600">{pendingCount}</span> talep var.</span> 
+               : 'İzin taleplerini buradan takip edebilirsin.'}
+          </p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
         >
-          <Plus className="w-4 h-4" />
-          İzin Talep Et
+          <Plus className="w-4 h-4" /> İzin Talep Et
         </button>
       </div>
 
       {/* --- FİLTRE TABLARI --- */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         {['All', 'Pending', 'Approved', 'Rejected'].map((stat) => (
           <button
             key={stat}
             onClick={() => setFilterStatus(stat)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
               filterStatus === stat 
                 ? 'bg-gray-800 text-white shadow-md' 
                 : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
@@ -108,12 +160,12 @@ export default function LeaveManagement() {
             {/* Kart Üstü */}
             <div className="p-6 pb-4 flex justify-between items-start">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-sm font-bold text-gray-600">
-                  {leave.avatar}
+                <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-sm font-bold text-gray-600 overflow-hidden border border-white shadow-sm">
+                  {getAvatarContent(leave)}
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-800">{leave.employee}</h3>
-                  <p className="text-xs text-gray-500">{leave.type}</p>
+                  <h3 className="font-bold text-gray-800">{leave.employees?.name || 'Bilinmiyor'}</h3>
+                  <p className="text-xs text-gray-500">{leave.leave_type}</p>
                 </div>
               </div>
               <span className={`px-2 py-1 rounded text-xs font-bold ${
@@ -121,7 +173,7 @@ export default function LeaveManagement() {
                 leave.status === 'Approved' ? 'bg-green-100 text-green-700' :
                 'bg-red-100 text-red-700'
               }`}>
-                {leave.status === 'Pending' ? 'Onay Bekliyor' :
+                {leave.status === 'Pending' ? 'Bekliyor' :
                  leave.status === 'Approved' ? 'Onaylandı' : 'Reddedildi'}
               </span>
             </div>
@@ -130,16 +182,18 @@ export default function LeaveManagement() {
             <div className="px-6 py-2 space-y-2">
               <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">
                 <Calendar className="w-4 h-4 text-gray-400" />
-                <span className="font-medium text-gray-900">{leave.dates}</span>
+                <span className="font-medium text-gray-900">
+                    {new Date(leave.start_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })} - {new Date(leave.end_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
+                </span>
                 <span className="text-gray-400">•</span>
-                <span>{leave.days} Gün</span>
+                <span>{calculateDays(leave.start_date, leave.end_date)} Gün</span>
               </div>
-              <p className="text-sm text-gray-500 italic">"{leave.desc}"</p>
+              <p className="text-sm text-gray-500 italic truncate">"{leave.reason}"</p>
             </div>
 
-            {/* Kart Altı (Aksiyonlar) */}
+            {/* Kart Altı (Aksiyonlar - Sadece Yönetici ve Bekleyenler İçin) */}
             <div className="p-4 border-t border-gray-50 mt-4 flex gap-2">
-              {leave.status === 'Pending' ? (
+              {isManager && leave.status === 'Pending' ? (
                 <>
                   <button 
                     onClick={() => handleStatusChange(leave.id, 'Approved')}
@@ -156,8 +210,9 @@ export default function LeaveManagement() {
                 </>
               ) : (
                 <div className="w-full py-2 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
-                  {leave.status === 'Approved' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                  İşlem Tamamlandı
+                  {leave.status === 'Approved' ? <CheckCircle className="w-4 h-4" /> : 
+                   leave.status === 'Rejected' ? <XCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                  {leave.status === 'Pending' ? 'Yönetici Onayı Bekleniyor' : 'İşlem Tamamlandı'}
                 </div>
               )}
             </div>
@@ -175,7 +230,7 @@ export default function LeaveManagement() {
       {/* --- TALEP OLUŞTURMA MODALI --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold text-gray-800 mb-4">Yeni İzin Talebi</h2>
             <form onSubmit={handleCreateRequest} className="space-y-4">
               <div>
@@ -226,14 +281,16 @@ export default function LeaveManagement() {
                 <button 
                   type="button" 
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-bold"
                 >
                   İptal
                 </button>
                 <button 
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold flex items-center gap-2"
                 >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Talep Oluştur
                 </button>
               </div>

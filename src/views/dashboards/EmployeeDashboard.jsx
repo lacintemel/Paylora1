@@ -1,188 +1,180 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../../supabase'; 
 import { 
-  Clock, 
-  Calendar, 
-  DollarSign, 
-  Download, 
-  Sun, 
-  Briefcase,
-  CheckCircle,
-  AlertCircle,
-  ChevronRight // EKLENDİ
+  Play, Pause, Clock, Calendar, Briefcase, ArrowRight, Sun
 } from 'lucide-react';
 
-export default function EmployeeDashboard({ onNavigate }){
-  const [isClockedIn, setIsClockedIn] = useState(false);
-  const [workDuration, setWorkDuration] = useState(0); 
-  const [currentTime, setCurrentTime] = useState(new Date());
+export default function EmployeeDashboard({ onNavigate, currentUser }) {
+  const [activeSession, setActiveSession] = useState(null);
+  const [loading, setLoading] = useState(false);
+  
+  // --- KRONOMETRE STATE ---
+  const [elapsedTime, setElapsedTime] = useState('00:00:00');
 
+  // 1. Aktif Oturumu Kontrol Et
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    if (currentUser?.id) checkActiveSession();
+  }, [currentUser]);
 
+  // 2. Canlı Kronometre Mantığı
   useEffect(() => {
     let interval;
-    if (isClockedIn) {
+    if (activeSession) {
       interval = setInterval(() => {
-        setWorkDuration(prev => prev + 1);
+        const now = new Date();
+        // Giriş saatini tarih objesine çevir
+        const [h, m, s] = activeSession.check_in.split(':').map(Number);
+        const startTime = new Date();
+        startTime.setHours(h, m, s || 0);
+        
+        const diff = now - startTime;
+        
+        // Saat, Dakika, Saniye Hesapla
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+        // Formatla (01:05:09 gibi)
+        const format = (num) => num.toString().padStart(2, '0');
+        setElapsedTime(`${format(hours)}:${format(minutes)}:${format(seconds)}`);
       }, 1000);
+    } else {
+      setElapsedTime('00:00:00');
     }
     return () => clearInterval(interval);
-  }, [isClockedIn]);
+  }, [activeSession]);
 
-  const formatDuration = (seconds) => {
-    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
-    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
+  const checkActiveSession = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('time_logs')
+      .select('*')
+      .eq('employee_id', currentUser.id)
+      .eq('date', today)
+      .is('check_out', null)
+      .single();
+
+    if (data) setActiveSession(data);
   };
 
-  const leaveBalance = 14;
-  const nextHoliday = "23 Nisan - Ulusal Egemenlik";
-  const lastSalary = 8229.17; 
-  
+  const handlePunch = async () => {
+    if (!currentUser) return;
+    setLoading(true);
+    
+    // ✅ SAAT FORMATINI GARANTİLE (24 SAAT)
+    const now = new Date().toLocaleTimeString('tr-TR', { hour12: false });
+    const today = new Date().toISOString().split('T')[0];
+
+    try {
+      if (!activeSession) {
+        // --- BAŞLAT ---
+        const { data, error } = await supabase
+          .from('time_logs')
+          .insert([{
+             employee_id: currentUser.id,
+             date: today,
+             check_in: now,
+             status: 'Active'
+          }])
+          .select()
+          .single();
+          
+        if (error) throw error;
+        setActiveSession(data); 
+      } else {
+        // --- BİTİR ---
+        const { error } = await supabase
+          .from('time_logs')
+          .update({
+             check_out: now,
+             status: 'Completed'
+          })
+          .eq('id', activeSession.id);
+
+        if (error) throw error;
+        setActiveSession(null); 
+      }
+    } catch (error) {
+      alert("İşlem hatası: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Günaydın';
+    if (hour < 18) return 'Tünaydın';
+    return 'İyi Akşamlar';
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
-      {/* --- ÜST KISIM: HOŞGELDİN KARTI --- */}
-      <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl p-8 text-white shadow-lg relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div>
-            <div className="flex items-center gap-2 text-green-100 mb-1">
-              <Sun className="w-5 h-5" />
-              <span className="font-medium">Günaydın, Laci</span>
+      {/* --- BANNER --- */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+         <div className="absolute top-0 right-0 p-4 opacity-10"><Sun className="w-32 h-32 text-white" /></div>
+         
+         <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div>
+               <h1 className="text-3xl font-bold mb-2">{getGreeting()}, {currentUser?.name?.split(' ')[0]}! 👋</h1>
+               <p className="text-blue-100 opacity-90">Bugünkü mesai durumun aşağıdadır.</p>
             </div>
-            <h1 className="text-3xl font-bold">Bugün harika işler çıkaracağına eminiz! 🚀</h1>
-            <p className="mt-2 text-green-100 opacity-90">
-              Bugün ofiste 4 toplantın var. Bir sonraki toplantı 14:00'te.
-            </p>
-          </div>
-
-          <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/20 text-center min-w-[200px]">
-            <p className="text-sm font-medium text-green-100 mb-2">
-              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </p>
-            <div className="text-2xl font-mono font-bold mb-4">
-              {formatDuration(workDuration)}
+            
+            {/* KRONOMETRE KUTUSU */}
+            <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/20 flex flex-col items-center gap-3 w-full md:w-auto min-w-[200px]">
+               <div className="text-center">
+                  <p className="text-xs font-bold text-blue-100 uppercase tracking-wider mb-1">
+                    {activeSession ? 'Geçen Süre' : 'Mesai Başlamadı'}
+                  </p>
+                  {/* CANLI SAYAN SAAT */}
+                  <p className="font-mono text-3xl font-bold tracking-wider">
+                    {activeSession ? elapsedTime : '--:--:--'}
+                  </p>
+                  {activeSession && <p className="text-[10px] opacity-70 mt-1">Giriş: {activeSession.check_in.slice(0,5)}</p>}
+               </div>
+               
+               <button 
+                 onClick={handlePunch}
+                 disabled={loading}
+                 className={`w-full py-2.5 px-6 rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 ${
+                   activeSession 
+                     ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30' 
+                     : 'bg-green-500 hover:bg-green-600 text-white shadow-green-500/30'
+                 }`}
+               >
+                 {loading ? <span className="animate-spin">⌛</span> : activeSession ? <><Pause className="w-4 h-4" /> Bitir</> : <><Play className="w-4 h-4" /> Başlat</>}
+               </button>
             </div>
-            <button 
-              onClick={() => setIsClockedIn(!isClockedIn)}
-              className={`w-full py-2 px-4 rounded-lg font-bold transition-all shadow-lg ${
-                isClockedIn 
-                  ? 'bg-red-500 hover:bg-red-600 text-white' 
-                  : 'bg-white text-green-700 hover:bg-green-50'
-              }`}
-            >
-              {isClockedIn ? 'Paydos Yap 🛑' : 'Mesaiye Başla ▶'}
-            </button>
-          </div>
-        </div>
-        <div className="absolute right-0 top-0 h-full w-1/3 bg-white/5 skew-x-12 transform translate-x-12"></div>
+         </div>
       </div>
 
-      {/* --- KPI KARTLARI --- */}
+      {/* --- HIZLI MENÜLER --- */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* İzin Kartı (DÜZELTİLDİ: onClick prop olarak eklendi) */}
-        <div 
-            onClick={() => onNavigate('leave')} // BURASI DÜZELTİLDİ
-            className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:border-green-200 transition-colors cursor-pointer group"
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-500">Kalan İzin Hakkı</p>
-            <h3 className="text-3xl font-bold text-gray-800 mt-1">{leaveBalance} Gün</h3>
-            <p className="text-xs text-green-600 mt-2 font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                İzin Talep Et <ChevronRight className="w-3 h-3" />
-            </p>
-          </div>
-          <div className="p-4 bg-orange-50 rounded-full text-orange-500">
-            <Briefcase className="w-8 h-8" />
-          </div>
-        </div>
-
-        {/* Tatil Kartı */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-500">Sıradaki Tatil</p>
-            <h3 className="text-lg font-bold text-gray-800 mt-1">{nextHoliday}</h3>
-            <p className="text-xs text-gray-400 mt-2">34 Gün kaldı</p>
-          </div>
-          <div className="p-4 bg-blue-50 rounded-full text-blue-500">
-            <Calendar className="w-8 h-8" />
-          </div>
-        </div>
-
-        {/* Maaş Kartı (DÜZELTİLDİ: onClick prop olarak eklendi) */}
-        <div 
-            onClick={() => onNavigate('documents')} // BURASI DÜZELTİLDİ
-            className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:border-green-200 transition-colors cursor-pointer group"
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-500">Son Yatan Maaş</p>
-            <h3 className="text-2xl font-bold text-gray-800 mt-1">${lastSalary.toLocaleString()}</h3>
-            <p className="flex items-center gap-1 text-xs text-green-600 mt-2 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-              <Download className="w-3 h-3" /> Bordroyu İndir
-            </p>
-          </div>
-          <div className="p-4 bg-green-50 rounded-full text-green-500">
-            <DollarSign className="w-8 h-8" />
-          </div>
-        </div>
-
-      </div>
-
-      {/* --- ALT BÖLÜM: SON HAREKETLER --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Bu Haftaki Mesailer</h3>
-          <div className="space-y-3">
-            {[
-              { day: 'Dün', date: '16 Oca', in: '09:00', out: '18:00', total: '9s', status: 'Tamamlandı' },
-              { day: 'Çarşamba', date: '15 Oca', in: '09:15', out: '18:15', total: '9s', status: 'Tamamlandı' },
-              { day: 'Salı', date: '14 Oca', in: '08:50', out: '17:50', total: '9s', status: 'Tamamlandı' },
-            ].map((log, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="bg-white p-2 rounded border border-gray-200">
-                    <Clock className="w-4 h-4 text-gray-500" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-gray-700 text-sm">{log.day}</p>
-                    <p className="text-xs text-gray-500">{log.date}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-gray-800">{log.in} - {log.out}</p>
-                  <p className="text-xs text-green-600">{log.total} • {log.status}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Şirket Duyuruları</h3>
-          <div className="space-y-4">
-            <div className="flex gap-3">
-              <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-gray-800">Yıllık Zam Oranları Hakkında</p>
-                <p className="text-sm text-gray-600 mt-1">Yönetim kurulumuz 2026 zam oranlarını belirlemek üzere toplanmıştır. Sonuçlar Cuma günü açıklanacaktır.</p>
-                <p className="text-xs text-gray-400 mt-2">2 saat önce</p>
-              </div>
+         <div onClick={() => onNavigate('leave')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+            <div className="flex justify-between items-start mb-4">
+               <div className="p-3 bg-orange-50 rounded-lg text-orange-600 group-hover:bg-orange-100"><Calendar className="w-6 h-6"/></div>
             </div>
-            <div className="w-full h-px bg-gray-100"></div>
-            <div className="flex gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-gray-800">Ofis İlaçlaması</p>
-                <p className="text-sm text-gray-600 mt-1">Bu hafta sonu ofiste genel ilaçlama yapılacaktır. Lütfen masalarınızda yiyecek bırakmayınız.</p>
-                <p className="text-xs text-gray-400 mt-2">Dün</p>
-              </div>
+            <h3 className="font-bold text-gray-800 text-lg">İzin Talepleri</h3>
+            <p className="text-sm text-gray-500 mt-1">İzinlerini yönet.</p>
+         </div>
+
+         <div onClick={() => onNavigate('time-tracking')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+            <div className="flex justify-between items-start mb-4">
+               <div className="p-3 bg-blue-50 rounded-lg text-blue-600 group-hover:bg-blue-100"><Clock className="w-6 h-6"/></div>
+               <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600" />
             </div>
-          </div>
-        </div>
+            <h3 className="font-bold text-gray-800 text-lg">Zaman Çizelgesi</h3>
+            <p className="text-sm text-gray-500 mt-1">Geçmiş kayıtlarını incele.</p>
+         </div>
+
+         <div onClick={() => onNavigate('payroll')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+            <div className="flex justify-between items-start mb-4">
+               <div className="p-3 bg-green-50 rounded-lg text-green-600 group-hover:bg-green-100"><Briefcase className="w-6 h-6"/></div>
+            </div>
+            <h3 className="font-bold text-gray-800 text-lg">Bordrolar</h3>
+            <p className="text-sm text-gray-500 mt-1">Maaş ödemelerini gör.</p>
+         </div>
       </div>
     </div>
   );

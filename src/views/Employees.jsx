@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabase'; // 👈 SUPABASE BAĞLANTISI
+import { supabase } from '../supabase'; 
 import { 
   Search, 
   Filter, 
@@ -75,11 +75,21 @@ export default function Employees({ onViewProfile, userRole }) {
     setLoading(false);
   };
 
+  // --- ✅ YENİ EKLENEN KISIM: AVATAR GÖSTERİCİ ---
+  const renderAvatarContent = (emp) => {
+    // Eğer avatar bir URL ise (https://...) resim olarak göster
+    if (emp.avatar && emp.avatar.startsWith('http')) {
+        return <img src={emp.avatar} alt={emp.name} className="w-full h-full object-cover" />;
+    }
+    // Değilse (veya yoksa) baş harfi göster
+    return emp.avatar || emp.name.charAt(0).toUpperCase();
+  };
+
   // --- 2. KAYDETME (CREATE & UPDATE) ---
   const handleSave = async (e) => {
     e.preventDefault();
 
-    // İsimden baş harfleri çıkarma (Avatar için)
+    // İsimden baş harfleri çıkarma (Avatar için varsayılan)
     const nameParts = formData.name.split(' ');
     const initials = nameParts.length > 1 
       ? `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase() 
@@ -95,8 +105,13 @@ export default function Employees({ onViewProfile, userRole }) {
       salary: Number(formData.salary),
       status: formData.status,
       start_date: formData.start_date,
-      avatar: initials
     };
+
+    // Sadece YENİ kayıt ise ve avatar yoksa baş harfleri ata.
+    // (Güncellemede avatar'ı ezmiyoruz ki fotoğraf varsa gitmesin)
+    if (!editingId) {
+        payload.avatar = initials;
+    }
 
     try {
       if (editingId) {
@@ -207,18 +222,20 @@ export default function Employees({ onViewProfile, userRole }) {
           </p>
         </div>
         
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            openAddModal();
-          }}
-          className="group bg-blue-600 text-white px-5 py-3 rounded-xl flex items-center gap-3 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
-        >
-          <div className="bg-white/20 p-1 rounded-lg group-hover:bg-white/30 transition-colors">
-             <Plus className="w-5 h-5" />
-          </div>
-          <span className="font-bold">Yeni Çalışan Ekle</span>
-        </button>
+        {['general_manager', 'hr'].includes(userRole) && (
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              openAddModal();
+            }}
+            className="group bg-blue-600 text-white px-5 py-3 rounded-xl flex items-center gap-3 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
+          >
+            <div className="bg-white/20 p-1 rounded-lg group-hover:bg-white/30 transition-colors">
+              <Plus className="w-5 h-5" />
+            </div>
+            <span className="font-bold">Yeni Çalışan Ekle</span>
+          </button>
+        )}
       </div>
 
       {/* --- ARAMA VE FİLTRE BAR --- */}
@@ -282,14 +299,14 @@ export default function Employees({ onViewProfile, userRole }) {
               {/* Kart Üstü: Profil ve Menü */}
               <div className="p-6 pb-4 flex items-start justify-between">
                 <div className="flex items-center gap-4">
-                  {/* Avatar */}
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-md transition-transform group-hover:scale-105
+                  {/* Avatar (GÜNCELLENEN KISIM BURASI) */}
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-md transition-transform group-hover:scale-105 overflow-hidden
                     ${emp.status !== 'Active' 
                       ? 'bg-gray-400 grayscale' 
                       : 'bg-gradient-to-br from-blue-500 to-indigo-600'
                     }`}
                   >
-                    {emp.avatar || emp.name.charAt(0)}
+                    {renderAvatarContent(emp)}
                   </div>
                   
                   {/* İsim ve ID */}
@@ -477,33 +494,24 @@ export default function Employees({ onViewProfile, userRole }) {
                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide border-b border-gray-100 pb-2">Kurumsal Bilgiler</h3>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
-  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Departman</label>
-  <div className="relative">
-    {/* SOL İKON: Bina Simgesi */}
-    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-    
-    <select 
-      className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer appearance-none" 
-      value={formData.department}
-      onChange={(e) => setFormData({...formData, department: e.target.value})}
-    >
-      <option value="Engineering">Engineering</option>
-      <option value="HR">HR</option>
-      <option value="Sales">Sales</option>
-      <option value="Marketing">Marketing</option>
-      <option value="Finance">Finance</option>
-      <option value="Product">Product</option>
-      <option value="Design">Design</option>
-    </select>
-
-    {/* SAĞ İKON: Aşağı Ok (appearance-none kullandığımız için bunu elle ekledik) */}
-    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-      </svg>
-    </div>
-  </div>
-</div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5">Departman</label>
+                      <div className="relative">
+                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+                        <select 
+                          className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer appearance-none" 
+                          value={formData.department}
+                          onChange={(e) => setFormData({...formData, department: e.target.value})}
+                        >
+                          {['Engineering', 'HR', 'Sales', 'Marketing', 'Finance', 'Product', 'Design'].map(d => (
+                              <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+                         {/* Elle eklenen aşağı ok ikonu */}
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                      </div>
+                    </div>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-1.5">Maaş (Yıllık)</label>
                       <div className="relative">
