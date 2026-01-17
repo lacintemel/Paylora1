@@ -1,73 +1,128 @@
-// src/data/mockData.js
+import { Users } from 'lucide-react';
 
+// --- ÇALIŞAN VERİLERİ ---
 export const employeesData = [
   {
     id: 1,
-    name: 'Sarah Johnson',
-    position: 'Senior Software Engineer',
+    employeeId: 'EMP1001',
+    name: 'Ali Yılmaz',
+    position: 'Senior Frontend Dev',
     department: 'Engineering',
-    email: 'sarah.johnson@company.com',
-    phone: '(555) 123-4567',
-    address: '123 Main St, San Francisco, CA 94102',
-    salary: 125000,
-    startDate: '2022-03-15',
-    birthDate: '1990-05-20',
+    email: 'ali.yilmaz@paylora.com',
+    phone: '+90 555 111 2233',
     status: 'Active',
-    employeeId: 'EMP001',
-    manager: 'John Smith',
-    ptoBalance: 15,
-    sickLeave: 8,
-    avatar: 'SJ',
-    emergencyContact: 'Mike Johnson - (555) 111-2222',
-    education: 'BS Computer Science - Stanford University',
-    performance: 4.5,
-    benefits: ['Health Insurance', 'Dental', '401k', 'Stock Options']
+    avatar: 'AY',
+    salary: 95000,
+    startDate: '2023-01-15',
+    performance: 4.8
   },
   {
     id: 2,
-    name: 'Michael Chen',
+    employeeId: 'EMP1002',
+    name: 'Ayşe Demir',
     position: 'Product Manager',
     department: 'Product',
-    email: 'michael.chen@company.com',
-    phone: '(555) 234-5678',
-    address: '456 Oak Ave, San Francisco, CA 94103',
-    salary: 115000,
-    startDate: '2021-07-01',
-    birthDate: '1988-11-12',
+    email: 'ayse.demir@paylora.com',
+    phone: '+90 555 222 3344',
     status: 'Active',
-    employeeId: 'EMP002',
-    manager: 'Lisa Anderson',
-    ptoBalance: 12,
-    sickLeave: 5,
-    avatar: 'MC',
-    emergencyContact: 'Jenny Chen - (555) 222-3333',
-    education: 'MBA - UC Berkeley',
-    performance: 4.8,
-    benefits: ['Health Insurance', 'Dental', '401k']
+    avatar: 'AD',
+    salary: 110000,
+    startDate: '2023-03-10',
+    performance: 4.5
   },
-  // Diğer çalışanları buraya ekleyebilirsiniz...
+  {
+    id: 3,
+    employeeId: 'EMP1003',
+    name: 'Mehmet Kaya',
+    position: 'UX Designer',
+    department: 'Design',
+    email: 'mehmet.kaya@paylora.com',
+    phone: '+90 555 333 4455',
+    status: 'Active',
+    avatar: 'MK',
+    salary: 88000,
+    startDate: '2024-06-01',
+    performance: 4.2
+  },
+  {
+    id: 4,
+    employeeId: 'EMP1004',
+    name: 'Zeynep Çelik',
+    position: 'HR Specialist',
+    department: 'HR',
+    email: 'zeynep.celik@paylora.com',
+    phone: '+90 555 444 5566',
+    status: 'On Leave',
+    avatar: 'ZÇ',
+    salary: 75000,
+    startDate: '2024-01-20',
+    performance: 4.9
+  },
+  {
+    id: 5,
+    employeeId: 'EMP1005',
+    name: 'Can Vural',
+    position: 'Backend Developer',
+    department: 'Engineering',
+    email: 'can.vural@paylora.com',
+    phone: '+90 555 666 7788',
+    status: 'Active',
+    avatar: 'CV',
+    salary: 92000,
+    startDate: '2023-11-15',
+    performance: 4.0
+  }
 ];
 
-export const timeEntriesData = [
-  { id: 1, employeeId: 1, date: '2026-01-13', clockIn: '09:00', clockOut: '17:30', hoursWorked: 8, status: 'Approved' },
-  { id: 2, employeeId: 1, date: '2026-01-14', clockIn: '09:15', clockOut: '17:45', hoursWorked: 8.5, status: 'Approved' },
-  // ...
-];
-
-export const leaveRequestsData = [
-  { id: 1, employeeId: 1, type: 'PTO', startDate: '2026-02-10', endDate: '2026-02-14', status: 'Pending', days: 5, reason: 'Family vacation' },
-  { id: 2, employeeId: 2, type: 'Sick Leave', startDate: '2026-01-20', endDate: '2026-01-20', status: 'Approved', days: 1, reason: 'Medical appointment' },
-  // ...
-];
-
+// --- MAAŞ VERİLERİ (Payroll.jsx için kritik!) ---
 export const payrollData = [
-  { id: 1, employeeId: 1, period: 'Jan 2026', gross: 10416.67, deductions: 2187.50, net: 8229.17, status: 'Paid' },
-  { id: 2, employeeId: 2, period: 'Jan 2026', gross: 9583.33, deductions: 2012.50, net: 7570.83, status: 'Paid' },
-  // ...
+  { id: 101, employeeId: 1, period: 'Ocak 2026', salary: 95000, net: 71250, status: 'Paid' },
+  { id: 102, employeeId: 2, period: 'Ocak 2026', salary: 110000, net: 82500, status: 'Processing' },
+  { id: 103, employeeId: 3, period: 'Ocak 2026', salary: 88000, net: 66000, status: 'Paid' },
+  { id: 104, employeeId: 4, period: 'Ocak 2026', salary: 75000, net: 56250, status: 'Processing' },
+  { id: 105, employeeId: 5, period: 'Ocak 2026', salary: 92000, net: 69000, status: 'Paid' },
+  
+  // Geçmiş aylar
+  { id: 201, employeeId: 1, period: 'Aralık 2025', salary: 95000, net: 71250, status: 'Paid' },
+  { id: 202, employeeId: 2, period: 'Aralık 2025', salary: 110000, net: 82500, status: 'Paid' },
 ];
 
-export const documentsData = [
-  { id: 1, employeeId: 1, name: 'Employment Contract.pdf', type: 'Contract', uploadDate: '2022-03-15', size: '245 KB' },
-  { id: 2, employeeId: 1, name: 'W-4 Form.pdf', type: 'Tax', uploadDate: '2022-03-15', size: '128 KB' },
-  // ...
+// --- BİLDİRİM VERİLERİ ---
+export const notificationsData = [
+  { 
+    id: 1, 
+    title: 'Yeni İzin Talebi', 
+    message: 'Ali Yılmaz 3 günlük yıllık izin talep etti.', 
+    time: '10 dk önce', 
+    type: 'warning', 
+    isRead: false,
+    targetRole: ['general_manager', 'hr'] // Sadece GM ve HR görsün
+  },
+  { 
+    id: 2, 
+    title: 'Maaş Ödemesi Tamamlandı', 
+    message: 'Ocak 2026 dönemi maaşları başarıyla yatırıldı.', 
+    time: '2 saat önce', 
+    type: 'success', 
+    isRead: false,
+    targetRole: ['general_manager', 'hr', 'employee'] // Herkes görsün
+  },
+  { 
+    id: 3, 
+    title: 'Sistem Bakımı', 
+    message: 'Gece 03:00\'te sistem bakımı yapılacaktır.', 
+    time: '1 gün önce', 
+    type: 'system', 
+    isRead: true,
+    targetRole: ['general_manager', 'hr', 'employee']
+  },
+  { 
+    id: 4, 
+    title: 'Bütçe Raporu Hazır', 
+    message: '2025 Q4 Finansal raporları onayınızı bekliyor.', 
+    time: '30 dk önce', 
+    type: 'info', 
+    isRead: false,
+    targetRole: ['general_manager'] // Sadece GM görsün
+  }
 ];

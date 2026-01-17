@@ -40,6 +40,7 @@ export const navItems = [
     icon: Calendar,
     allowedRoles: [ROLES.GM, ROLES.HR, ROLES.EMPLOYEE]
   },
+  // 👇 KRİTİK KISIM BURASI: id 'payroll' OLMALI
   {
     id: 'payroll',
     label: 'Maaş & Bordro',
@@ -56,7 +57,7 @@ export const navItems = [
     id: 'documents',
     label: 'Belgelerim',
     icon: FileText,
-    allowedRoles: [ROLES.EMPLOYEE, ROLES.HR] // HR da kendi belgesini görebilsin
+    allowedRoles: [ROLES.EMPLOYEE, ROLES.HR]
   },
   {
     id: 'settings',

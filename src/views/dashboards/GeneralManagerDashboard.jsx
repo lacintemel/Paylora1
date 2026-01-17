@@ -10,22 +10,15 @@ import {
 } from 'lucide-react';
 import { employeesData, payrollData } from '../../data/mockData';
 
-export default function GeneralManagerDashboard() {
-  // --- 1. HESAPLAMALAR (Gerçek Veri Analizi) ---
+// 👇 BURAYA DİKKAT: { onNavigate } parametresini ekliyoruz.
+export default function GeneralManagerDashboard({ onNavigate }) {
   
-  // Toplam Çalışan Sayısı
+  // --- HESAPLAMALAR ---
   const totalEmployees = employeesData.length;
-  
-  // Toplam Yıllık Maaş Yükü
   const totalAnnualPayroll = employeesData.reduce((acc, curr) => acc + curr.salary, 0);
-  
-  // Tahmini Aylık Gider (Yıllık / 12)
   const monthlyPayroll = totalAnnualPayroll / 12;
-
-  // Ortalama Performans Puanı
   const avgPerformance = (employeesData.reduce((acc, curr) => acc + curr.performance, 0) / totalEmployees).toFixed(1);
 
-  // Departmanlara Göre Dağılım Hesaplama
   const departments = {};
   employeesData.forEach(emp => {
     departments[emp.department] = (departments[emp.department] || 0) + 1;
@@ -34,7 +27,7 @@ export default function GeneralManagerDashboard() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
-      {/* --- ÜST KISIM: HOŞGELDİN MESAJI --- */}
+      {/* --- ÜST KISIM --- */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Şirket Genel Bakış</h1>
@@ -44,13 +37,10 @@ export default function GeneralManagerDashboard() {
            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold border border-green-200">
              Sistem Durumu: Normal
            </span>
-           <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100">
-             Dönem: Ocak 2026
-           </span>
         </div>
       </div>
 
-      {/* --- BÖLÜM 1: KPI KARTLARI (Önemli Sayılar) --- */}
+      {/* --- KPI KARTLARI --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         
         {/* Kart 1: Toplam Çalışan */}
@@ -121,19 +111,26 @@ export default function GeneralManagerDashboard() {
         </div>
       </div>
 
-      {/* --- BÖLÜM 2: DETAYLI ANALİZLER --- */}
+      {/* --- DETAYLI ANALİZLER --- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* SOL: Departman Dağılımı */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold text-gray-800">Departman Dağılımı</h3>
-            <button className="text-sm text-blue-600 hover:underline">Detaylı Rapor</button>
+            
+            {/* 👇 DÜZELTME 1: LİNK BURADA */}
+            <button 
+              onClick={() => onNavigate('employees')} 
+              className="text-sm text-blue-600 hover:underline font-medium"
+            >
+              Detaylı Rapor
+            </button>
+
           </div>
           
           <div className="space-y-5">
             {Object.entries(departments).map(([deptName, count]) => {
-              // Yüzde hesabı
               const percentage = Math.round((count / totalEmployees) * 100);
               return (
                 <div key={deptName}>
@@ -157,7 +154,15 @@ export default function GeneralManagerDashboard() {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold text-gray-800">Son Maaş Ödemeleri</h3>
-            <button className="text-sm text-blue-600 hover:underline">Tümünü Gör</button>
+            
+            {/* 👇 DÜZELTME 2: LİNK BURADA */}
+            <button 
+              onClick={() => onNavigate('payroll')} 
+              className="text-sm text-blue-600 hover:underline font-medium"
+            >
+              Tümünü Gör
+            </button>
+
           </div>
 
           <div className="overflow-x-auto">
@@ -172,7 +177,6 @@ export default function GeneralManagerDashboard() {
               </thead>
               <tbody className="text-sm">
                 {payrollData.slice(0, 5).map((pay) => {
-                   // İlgili çalışanı bulalım
                    const employee = employeesData.find(e => e.id === pay.employeeId);
                    return (
                     <tr key={pay.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
