@@ -23,8 +23,7 @@ export default function Documents({ userRole, currentUserId }) {
         `)
         .order('created_at', { ascending: false });
 
-      // 🔒 KRİTİK FİLTRELEME:
-      // Eğer kullanıcı 'employee' ise SADECE kendi dokümanlarını görsün.
+      // 🔒 GÜVENLİK: Çalışan sadece kendi dosyasını görür
       if (userRole === 'employee') {
         query = query.eq('employee_id', currentUserId);
       }
@@ -49,27 +48,27 @@ export default function Documents({ userRole, currentUserId }) {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random()}.${fileExt}`;
-      const filePath = `${currentUserId}/${fileName}`; // Klasörleme: UserID/Dosya
+      const filePath = `${currentUserId}/${fileName}`; 
 
       // 1. Storage'a Yükle
       const { error: uploadError } = await supabase.storage
-        .from('documents') // Bucket adının 'documents' olduğundan emin ol
+        .from('documents') 
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // 2. Public URL Al
+      // 2. URL Al
       const { data: { publicUrl } } = supabase.storage
         .from('documents')
         .getPublicUrl(filePath);
 
-      // 3. Veritabanına Yaz
+      // 3. Veritabanına Yaz (DÜZELTME BURADA: 'title' yerine 'name' kullanıyoruz)
       const { error: dbError } = await supabase.from('documents').insert({
-        title: file.name,
+        name: file.name,      // 👈 DÜZELTİLDİ: DB 'name' bekliyordu
         file_url: publicUrl,
         type: file.type,
         size: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-        employee_id: currentUserId, // Yükleyen kişi
+        employee_id: currentUserId,
         uploaded_by: currentUserId
       });
 
@@ -85,7 +84,6 @@ export default function Documents({ userRole, currentUserId }) {
     }
   };
 
-  // --- DOKÜMAN SİLME (Sadece Yetkili veya Kendi Dosyası) ---
   const handleDelete = async (id) => {
     if (!window.confirm("Bu dosyayı silmek istediğinize emin misiniz?")) return;
 
@@ -98,14 +96,15 @@ export default function Documents({ userRole, currentUserId }) {
     }
   };
 
+  // Arama filtresini de 'name'e göre güncelledik
   const filteredDocs = documents.filter(doc => 
-    doc.title.toLowerCase().includes(searchTerm.toLowerCase())
+    doc.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
-      {/* BAŞLIK VE AKSİYONLAR */}
+      {/* BAŞLIK */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Doküman Merkezi</h1>
@@ -123,7 +122,7 @@ export default function Documents({ userRole, currentUserId }) {
         </div>
       </div>
 
-      {/* ARAMA BAR */}
+      {/* ARAMA */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
          <Search className="w-5 h-5 text-gray-400" />
          <input 
@@ -135,7 +134,7 @@ export default function Documents({ userRole, currentUserId }) {
          />
       </div>
 
-      {/* DOKÜMAN LİSTESİ */}
+      {/* LİSTE */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <table className="w-full text-left text-sm">
           <thead className="bg-gray-50 border-b border-gray-100 text-gray-500">
@@ -160,14 +159,14 @@ export default function Documents({ userRole, currentUserId }) {
                       <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
                         <FileText className="w-5 h-5" />
                       </div>
-                      <span className="font-bold text-gray-800">{doc.title}</span>
+                      {/* 👇 DÜZELTİLDİ: title yerine name */}
+                      <span className="font-bold text-gray-800">{doc.name}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-gray-500">
                     {doc.type?.split('/')[1]?.toUpperCase() || 'FILE'} • {doc.size}
                   </td>
                   <td className="px-6 py-4">
-                    {/* Eğer yükleyen kendisiyse "Siz", değilse ismi */}
                     <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs font-bold">
                        {doc.employee_id === currentUserId ? 'Siz' : doc.employees?.name || 'Bilinmiyor'}
                     </span>
@@ -182,17 +181,14 @@ export default function Documents({ userRole, currentUserId }) {
                         target="_blank" 
                         rel="noreferrer"
                         className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                        title="Görüntüle/İndir"
                       >
                         <Download className="w-4 h-4" />
                       </a>
                       
-                      {/* Sadece Kendi Dosyasını veya Yöneticiyse Silebilir */}
                       {(['general_manager', 'hr'].includes(userRole) || doc.employee_id === currentUserId) && (
                           <button 
                             onClick={() => handleDelete(doc.id)}
                             className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                            title="Sil"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
