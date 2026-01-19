@@ -1,63 +1,56 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
-import { 
-  DollarSign, Download, Search, Filter, Play, CheckCircle, Clock, FileText, Loader2, AlertCircle
-} from 'lucide-react';
+import { supabase } from '../supabase'; 
+import { DollarSign, Download, Filter, Calendar, TrendingUp, AlertCircle } from 'lucide-react';
 
 export default function Payroll({ currentUserId, userRole }) {
-  // --- STATE ---
   const [payrolls, setPayrolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState(false);
   
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
-  const [filterStatus, setFilterStatus] = useState('All');
+  // Varsayılan olarak bugünün ayı (YYYY-MM formatı)
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
-  // YÖNETİCİ KONTROLÜ
-  const isManager = ['hr', 'general_manager'].includes(userRole);
-
-  // --- 1. VERİ ÇEKME ---
   useEffect(() => {
-    if (currentUserId) fetchPayrolls();
-  }, [currentUserId, selectedMonth, filterStatus]);
+    fetchPayrolls();
+  }, [currentUserId, userRole, selectedMonth]);
 
   const fetchPayrolls = async () => {
     setLoading(true);
-    
-    // İlişkili tablodan (employees) isim, avatar, departman çek
-    let query = supabase
-      .from('payrolls')
-      .select(`
-        *,
-        employees ( name, avatar, department )
-      `)
-      .eq('period', selectedMonth) // Sadece seçili ayı getir
-      .order('id', { ascending: false });
+    try {
+      let query = supabase
+        .from('payrolls')
+        .select(`
+            *,
+            employees:employee_id (name, department, avatar, position)
+        `)
+        .eq('period', selectedMonth)
+        .order('created_at', { ascending: false });
 
-    // Eğer yönetici değilse sadece kendi maaşını gör
-    if (!isManager) {
-      query = query.eq('employee_id', currentUserId);
-    }
+      // 🔒 GÜVENLİK: Çalışan sadece kendini görsün
+      if (userRole === 'employee') {
+         query = query.eq('employee_id', currentUserId);
+      }
 
-    const { data, error } = await query;
-    if (error) console.error("Payroll Error:", error);
-    else {
-      // Filtreleme (Frontend tarafında yapılabilir veya query'e eklenebilir)
-      const filtered = filterStatus === 'All' 
-        ? data 
-        : data.filter(p => p.status === filterStatus);
-      setPayrolls(filtered || []);
+      const { data, error } = await query;
+      if (error) throw error;
+      setPayrolls(data || []);
+    } catch (error) {
+      console.error("Bordro hatası:", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // --- 2. MAAŞLARI HESAPLA (Sadece HR/GM) ---
+  // 🔒 SADECE YÖNETİCİLER ÇALIŞTIRABİLİR
   const handleRunPayroll = async () => {
+    if (userRole === 'employee') return alert("Bu işlem için yetkiniz yok.");
+    
     if (!window.confirm(`${selectedMonth} dönemi için maaşları hesaplamak istiyor musunuz?`)) return;
     
     setCalculating(true);
     try {
-      // 1. Adım: Aktif çalışanları çek
+      // 1. Aktif çalışanları çek
       const { data: activeEmployees, error: empError } = await supabase
         .from('employees')
         .select('id, salary')
@@ -66,18 +59,16 @@ export default function Payroll({ currentUserId, userRole }) {
       if (empError) throw empError;
       if (!activeEmployees || activeEmployees.length === 0) throw new Error("Aktif çalışan bulunamadı.");
 
-      // 2. Adım: Bu ay zaten maaşı hesaplanmış olanları bul
+      // 2. Bu ay zaten maaşı hesaplananları bul
       const { data: existingPayrolls, error: existingError } = await supabase
         .from('payrolls')
         .select('employee_id')
         .eq('period', selectedMonth);
 
       if (existingError) throw existingError;
-
-      // Zaten hesaplanmış ID'leri bir listeye al (Örn: [1, 5, 8])
       const existingEmployeeIds = existingPayrolls.map(p => p.employee_id);
 
-      // 3. Adım: Sadece maaşı HESAPLANMAMIŞ olanları filtrele
+      // 3. Sadece hesaplanmamış olanları filtrele
       const employeesToPay = activeEmployees.filter(emp => !existingEmployeeIds.includes(emp.id));
 
       if (employeesToPay.length === 0) {
@@ -86,31 +77,28 @@ export default function Payroll({ currentUserId, userRole }) {
         return;
       }
 
-      // 4. Adım: Sadece yeni kişiler için kayıt hazırla
+      // 4. Hesapla ve Ekle
       const payrollRecords = employeesToPay.map(emp => {
-        const base = emp.salary / 12; // Yıllık maaşı aya böl
-        const tax = base * 0.15; // %15 Vergi
-        const bonus = 0; 
-        const net = base - tax + bonus;
+        const base = emp.salary / 12; // Aylık Brüt
+        const tax = base * 0.15; // Vergi (Örnek %15)
+        const net = base - tax;
 
         return {
           employee_id: emp.id,
           period: selectedMonth,
           base_salary: Math.floor(base),
           deductions: Math.floor(tax),
-          bonus: bonus,
+          bonus: 0,
           net_pay: Math.floor(net),
           status: 'Pending', 
           payment_date: null
         };
       });
 
-      // 5. Adım: Veritabanına ekle
       const { error } = await supabase.from('payrolls').insert(payrollRecords);
-
       if (error) throw error;
       
-      alert(`${payrollRecords.length} yeni maaş kaydı oluşturuldu! (${activeEmployees.length - payrollRecords.length} kişi zaten mevcuttu)`);
+      alert(`${payrollRecords.length} yeni maaş kaydı oluşturuldu!`);
       fetchPayrolls();
 
     } catch (error) {
@@ -120,165 +108,100 @@ export default function Payroll({ currentUserId, userRole }) {
     }
   };
 
-  // --- 3. ÖDEME YAPILDI İŞARETLE ---
-  const handleMarkAsPaid = async (id) => {
-    const today = new Date().toISOString().split('T')[0];
-    const { error } = await supabase
-      .from('payrolls')
-      .update({ status: 'Paid', payment_date: today })
-      .eq('id', id);
-
-    if (!error) fetchPayrolls();
-  };
-
-  // --- İSTATİSTİKLER ---
-  const totalPayout = payrolls.reduce((sum, p) => sum + p.net_pay, 0);
-  const pendingCount = payrolls.filter(p => p.status === 'Pending').length;
-  const paidCount = payrolls.filter(p => p.status === 'Paid').length;
-
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      
-      {/* BAŞLIK VE KONTROLLER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Bordro ve Maaşlar</h1>
-          <p className="text-gray-500">
-             {isManager ? 'Personel maaş ödemelerini yönetin.' : 'Maaş bordrolarınızı görüntüleyin.'}
-          </p>
-        </div>
+    <div className="space-y-6 animate-in fade-in duration-500">
+       
+       {/* BAŞLIK VE KONTROLLER */}
+       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">Bordro & Maaşlar</h1>
+            <p className="text-gray-500">Maaş ödemelerini ve bordro geçmişini yönetin.</p>
+          </div>
+          
+          <div className="flex items-center gap-3">
+             {/* Dönem Seçici */}
+             <div className="bg-white px-3 py-2 rounded-xl border border-gray-200 flex items-center gap-2 shadow-sm">
+                <Calendar className="w-4 h-4 text-gray-500"/>
+                <input 
+                    type="month" 
+                    value={selectedMonth} 
+                    onChange={e => setSelectedMonth(e.target.value)} 
+                    className="bg-transparent outline-none text-sm font-bold text-gray-700"
+                />
+             </div>
 
-        <div className="flex gap-3">
-            {/* Dönem Seçici */}
-            <input 
-              type="month" 
-              className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-            />
-
-            {/* Maaş Hesapla Butonu (Sadece Yönetici) */}
-            {isManager && (
-              <button 
-                onClick={handleRunPayroll}
-                disabled={calculating}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                 {calculating ? <Loader2 className="w-4 h-4 animate-spin"/> : <Play className="w-4 h-4" />}
-                 <span>Hesaplamayı Başlat</span>
-              </button>
-            )}
-        </div>
-      </div>
-
-      {/* İSTATİSTİK KARTLARI */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-           <p className="text-sm font-medium text-gray-500">Toplam Ödenecek</p>
-           <h3 className="text-3xl font-bold text-gray-800 mt-1">${totalPayout.toLocaleString()}</h3>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-           <p className="text-sm font-medium text-gray-500">Ödenen Personel</p>
-           <h3 className="text-3xl font-bold text-green-600 mt-1">{paidCount}</h3>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-           <p className="text-sm font-medium text-gray-500">Bekleyen Ödeme</p>
-           <h3 className="text-3xl font-bold text-orange-500 mt-1">{pendingCount}</h3>
-        </div>
-      </div>
-
-      {/* TABLO */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Filtre Tabları */}
-        <div className="p-4 border-b border-gray-100 flex gap-2 bg-gray-50/50 overflow-x-auto">
-             {['All', 'Pending', 'Paid'].map(status => (
+             {/* Hesapla Butonu (Sadece Yetkili) */}
+             {userRole !== 'employee' && (
                 <button 
-                  key={status}
-                  onClick={() => setFilterStatus(status)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                      filterStatus === status 
-                      ? 'bg-gray-800 text-white' 
-                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
-                  }`}
+                    onClick={handleRunPayroll} 
+                    disabled={calculating} 
+                    className="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-sm hover:bg-green-700 flex items-center gap-2 transition-all"
                 >
-                  {status === 'All' ? 'Tümü' : status === 'Pending' ? 'Bekleyenler' : 'Ödenenler'}
+                    {calculating ? <Loader2 className="w-4 h-4 animate-spin"/> : <DollarSign className="w-4 h-4"/>} 
+                    {calculating ? 'Hesaplanıyor...' : 'Maaşları Hesapla'}
                 </button>
-             ))}
-        </div>
+             )}
+          </div>
+       </div>
 
-        <div className="overflow-x-auto">
-           <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-100">
-                 <tr>
-                    <th className="px-6 py-4">Personel</th>
-                    <th className="px-6 py-4">Dönem</th>
-                    <th className="px-6 py-4">Brüt</th>
-                    <th className="px-6 py-4 text-red-500">Kesinti</th>
-                    <th className="px-6 py-4 text-green-600 font-bold">Net Ödenen</th>
-                    <th className="px-6 py-4">Durum</th>
-                    <th className="px-6 py-4 text-right">İşlem</th>
-                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                 {loading ? (
-                    <tr><td colSpan="7" className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400"/></td></tr>
-                 ) : payrolls.map((row) => (
-                    <tr key={row.id} className="hover:bg-gray-50 transition-colors">
-                       <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">
-                                {row.employees?.name?.slice(0,2).toUpperCase()}
-                             </div>
-                             <div>
-                                <p className="font-bold text-gray-800">{row.employees?.name}</p>
-                                <p className="text-xs text-gray-400">{row.employees?.department}</p>
-                             </div>
-                          </div>
-                       </td>
-                       <td className="px-6 py-4 text-gray-600 font-mono">{row.period}</td>
-                       <td className="px-6 py-4 text-gray-600">${row.base_salary.toLocaleString()}</td>
-                       <td className="px-6 py-4 text-red-500">-${row.deductions.toLocaleString()}</td>
-                       <td className="px-6 py-4 font-bold text-gray-800 bg-green-50/50">${row.net_pay.toLocaleString()}</td>
-                       <td className="px-6 py-4">
-                          <span className={`px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit ${
-                             row.status === 'Paid' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                          }`}>
-                             {row.status === 'Paid' ? <CheckCircle className="w-3 h-3"/> : <Clock className="w-3 h-3"/>}
-                             {row.status === 'Paid' ? 'Ödendi' : 'Bekliyor'}
-                          </span>
-                       </td>
-                       <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2">
-                             {/* Bordro İndir (Mock Action) */}
-                             <button title="Bordro İndir" className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                                <FileText className="w-4 h-4" />
-                             </button>
-
-                             {/* Ödeme Yap Butonu (Sadece Yönetici ve Bekliyorsa) */}
-                             {isManager && row.status === 'Pending' && (
-                                <button 
-                                  onClick={() => handleMarkAsPaid(row.id)}
-                                  title="Ödendi İşaretle" 
-                                  className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors border border-green-200"
-                                >
-                                   <DollarSign className="w-4 h-4" />
-                                </button>
-                             )}
-                          </div>
-                       </td>
-                    </tr>
-                 ))}
-
-                 {!loading && payrolls.length === 0 && (
-                    <tr><td colSpan="7" className="p-12 text-center text-gray-400">
-                       <AlertCircle className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                       <p>Bu dönem için maaş kaydı bulunamadı.</p>
+       {/* TABLO */}
+       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <table className="w-full text-left text-sm">
+             <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 uppercase tracking-wider text-xs">
+                <tr>
+                   <th className="px-6 py-4 font-bold">Personel</th>
+                   <th className="px-6 py-4 font-bold">Dönem</th>
+                   <th className="px-6 py-4 font-bold">Brüt Maaş</th>
+                   <th className="px-6 py-4 font-bold text-red-500">Kesintiler</th>
+                   <th className="px-6 py-4 font-bold text-green-600">Net Ödenen</th>
+                   <th className="px-6 py-4 font-bold">Durum</th>
+                   <th className="px-6 py-4 font-bold text-right">Bordro</th>
+                </tr>
+             </thead>
+             <tbody className="divide-y divide-gray-100">
+                {payrolls.length === 0 ? (
+                    <tr><td colSpan="7" className="p-8 text-center text-gray-500 flex flex-col items-center gap-2">
+                        <AlertCircle className="w-6 h-6 text-gray-300"/>
+                        Bu dönem için kayıt bulunamadı.
                     </td></tr>
-                 )}
-              </tbody>
-           </table>
-        </div>
-      </div>
+                ) : (
+                   payrolls.map(pay => (
+                      <tr key={pay.id} className="hover:bg-gray-50 transition-colors">
+                         {/* Personel */}
+                         <td className="px-6 py-4">
+                            <div>
+                                <p className="font-bold text-gray-800">{pay.employees?.name}</p>
+                                <p className="text-xs text-gray-500">{pay.employees?.position}</p>
+                            </div>
+                         </td>
+                         <td className="px-6 py-4 font-medium text-gray-600">{pay.period}</td>
+                         <td className="px-6 py-4 font-medium text-gray-600 tabular-nums">${pay.base_salary.toLocaleString()}</td>
+                         <td className="px-6 py-4 font-bold text-red-500 tabular-nums">-${pay.deductions.toLocaleString()}</td>
+                         <td className="px-6 py-4 font-bold text-green-700 text-base tabular-nums bg-green-50/30">${pay.net_pay.toLocaleString()}</td>
+                         
+                         {/* Durum */}
+                         <td className="px-6 py-4">
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                                pay.status === 'Paid' 
+                                ? 'bg-green-50 text-green-700 border-green-100' 
+                                : 'bg-orange-50 text-orange-700 border-orange-100'
+                            }`}>
+                               {pay.status === 'Paid' ? 'Ödendi' : 'Bekliyor'}
+                            </span>
+                         </td>
+                         
+                         {/* İndir Butonu */}
+                         <td className="px-6 py-4 text-right">
+                            <button className="text-gray-400 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors" title="Bordro İndir">
+                                <Download className="w-4 h-4"/>
+                            </button>
+                         </td>
+                      </tr>
+                   ))
+                )}
+             </tbody>
+          </table>
+       </div>
     </div>
   );
 }

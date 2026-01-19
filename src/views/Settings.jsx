@@ -2,181 +2,175 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase'; 
 import { 
   Building2, Save, Clock, User, Lock, Bell, CreditCard, 
-  Camera, ShieldAlert, Upload, Loader2, CheckCircle, Download,
-  AlertTriangle
+  Camera, Upload, Loader2, Mail, CheckCircle, Download, AlertTriangle
 } from 'lucide-react';
 
-export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
+export default function Settings({ userRole, currentUserId, onUpdate }) {
   const [activeTab, setActiveTab] = useState('profile');
   const [isLoading, setIsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   
-  const fileInputRef = useRef(null);
+  const fileInputRef = useRef(null); 
+  const logoInputRef = useRef(null);
 
   // --- STATE ---
   const [profileData, setProfileData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    position: '',
-    avatar: null
+    name: '', email: '', phone: '', position: '', avatar: null
   });
-
-  // Şifre Değiştirme State'i
-  const [passwords, setPasswords] = useState({ new: '', confirm: '' });
 
   const [companySettings, setCompanySettings] = useState({
-    probation_months: 2,
-    company_name: '',
+    probation_months: 2, company_name: '', company_logo: ''
   });
 
-  // --- HELPER: Baş Harfler ---
-  const getInitials = (name) => {
-    if (!name) return 'US';
-    const parts = name.trim().split(' ');
-    if (parts.length > 1) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
+  const [passwords, setPasswords] = useState({ old: '', new: '', confirm: '' });
+  const [newEmail, setNewEmail] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
 
-  // --- 1. VERİ ÇEKME ---
+  // --- BAŞLANGIÇ ---
   useEffect(() => {
     if (currentUserId) fetchProfile();
-    // Sadece yöneticiyse şirket ayarlarını çek
-    if (['general_manager', 'hr'].includes(userRole)) fetchCompanySettings();
-  }, [currentUserId, userRole]);
+    // Herkes okuyabilir ama kaydetme yetkisi aşağıda kontrol edilir
+    fetchCompanySettings(); 
+  }, [currentUserId]);
 
   const fetchProfile = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('id', currentUserId)
-        .single();
-      if (error) throw error;
-      if (data) setProfileData(data);
-    } catch (error) {
-      console.error("Profil verisi çekilemedi:", error);
-    }
+    const { data } = await supabase.from('employees').select('*').eq('id', currentUserId).single();
+    if (data) setProfileData(data);
   };
 
   const fetchCompanySettings = async () => {
     try {
-      const { data, error } = await supabase.from('company_settings').select('*').single();
+      const { data, error } = await supabase.from('company_settings').select('*').maybeSingle();
       if (data) setCompanySettings(data);
-      // Eğer tablo boşsa (henüz satır yoksa) varsayılan bırakıyoruz
-    } catch (error) {
-      console.error("Şirket ayarları çekilemedi:", error);
+    } catch (err) {
+      console.error("Ayar çekme hatası:", err.message);
     }
   };
 
-  // --- 2. FOTOĞRAF YÜKLEME ---
-  const handleAvatarUpload = async (event) => {
+  // --- LOGO YÜKLEME (OTOMATİK VE ANINDA GÜNCELLEME) ---
+  const handleLogoUpload = async (event) => {
     try {
       setUploading(true);
       const file = event.target.files[0];
       if (!file) return;
 
       const fileExt = file.name.split('.').pop();
-      const fileName = `${currentUserId}-${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true });
-
+      const fileName = `company-logo-${Date.now()}.${fileExt}`;
+      
+      // 1. Storage'a Yükle
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file, { upsert: true });
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
+      // 2. URL Al
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      
+      // 3. Veritabanına ANINDA Yaz (Kaydet butonunu bekleme)
+      const { error: dbError } = await supabase.from('company_settings').upsert({
+         id: 1,
+         company_logo: publicUrl,
+         company_name: companySettings.company_name || 'Paylora',
+         probation_months: companySettings.probation_months || 2
+      });
+      
+      if (dbError) throw dbError;
 
+      // 4. State güncelle ve App.jsx'i uyar (Sidebar değişsin)
+      setCompanySettings(prev => ({ ...prev, company_logo: publicUrl }));
+      if (onUpdate) onUpdate(); 
+
+      alert("Logo güncellendi! Sol menüde görebilirsiniz. ✅");
+
+    } catch (error) { 
+      alert('Hata: ' + error.message); 
+    } finally { 
+      setUploading(false); 
+    }
+  };
+
+  // --- PROFİL FOTO YÜKLEME ---
+  const handleAvatarUpload = async (event) => {
+    try {
+      setUploading(true);
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${currentUserId}-${Date.now()}.${fileExt}`;
+      
+      const { error } = await supabase.storage.from('avatars').upload(fileName, file, { upsert: true });
+      if (error) throw error;
+      
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      
+      // State güncelle (Kayıt işlemi genel kaydet butonunda)
       setProfileData(prev => ({ ...prev, avatar: publicUrl }));
-      // Otomatik kaydetme hissi için burada veritabanını da güncelleyebiliriz
-      // ama "Kaydet" butonuna basılmasını beklemek daha güvenli UX.
-      alert("Fotoğraf yüklendi! Kalıcı olması için 'Kaydet' butonuna basınız.");
-
-    } catch (error) {
-      alert('Yükleme hatası: ' + error.message + "\n(Supabase panelinde 'avatars' public bucket oluşturduğuna emin ol)");
-    } finally {
-      setUploading(false);
-    }
+      alert("Fotoğraf yüklendi. Kalıcı olması için 'Kaydet' butonuna basın.");
+    } catch (error) { alert('Hata: ' + error.message); } finally { setUploading(false); }
   };
 
-  // --- 3. ŞİFRE DEĞİŞTİRME ---
+  // --- ŞİFRE GÜNCELLEME ---
   const handlePasswordUpdate = async () => {
-    if (passwords.new.length < 6) {
-        alert("Şifre en az 6 karakter olmalı.");
-        return false;
-    }
-    if (passwords.new !== passwords.confirm) {
-        alert("Şifreler uyuşmuyor.");
-        return false;
-    }
-
-    const { error } = await supabase.auth.updateUser({
-        password: passwords.new
-    });
-
-    if (error) {
-        alert("Şifre değiştirme hatası: " + error.message);
-        return false;
-    }
+    if (!passwords.old || !passwords.new) return alert("Eski ve yeni şifre gerekli.");
+    if (passwords.new !== passwords.confirm) return alert("Yeni şifreler uyuşmuyor.");
     
-    setPasswords({ new: '', confirm: '' }); // Inputları temizle
-    return true;
+    setIsLoading(true);
+    try {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: profileData.email,
+            password: passwords.old
+        });
+        if (signInError) throw new Error("Eski şifreniz hatalı!");
+
+        const { error: updateError } = await supabase.auth.updateUser({ password: passwords.new });
+        if (updateError) throw updateError;
+
+        alert("Şifre güncellendi!");
+        setPasswords({ old: '', new: '', confirm: '' });
+    } catch (error) { alert(error.message); } finally { setIsLoading(false); }
   };
 
-  // --- 4. GENEL KAYDETME ---
+  // --- EMAIL GÜNCELLEME ---
+  const handleEmailUpdate = async () => {
+    if (!newEmail || !emailPassword) return alert("Yeni e-posta ve şifre gerekli.");
+
+    setIsLoading(true);
+    try {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: profileData.email,
+            password: emailPassword
+        });
+        if (signInError) throw new Error("Şifreniz hatalı!");
+
+        const { error: updateError } = await supabase.auth.updateUser({ email: newEmail });
+        if (updateError) throw updateError;
+
+        alert("Doğrulama maili gönderildi!");
+        setNewEmail(''); setEmailPassword('');
+    } catch (error) { alert(error.message); } finally { setIsLoading(false); }
+  };
+
+  // --- GENEL KAYDETME ---
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      // A) Profil Güncelle
-      const { error: profileError } = await supabase
-        .from('employees')
-        .update({
-          name: profileData.name,
-          email: profileData.email,
-          phone: profileData.phone,
-          avatar: profileData.avatar
-        })
-        .eq('id', currentUserId);
+      // 1. Profil
+      await supabase.from('employees').update({
+        name: profileData.name, phone: profileData.phone, avatar: profileData.avatar
+      }).eq('id', currentUserId);
 
-      if (profileError) throw profileError;
-
-      // B) Şirket Ayarları (Sadece Yetkili ve İlgili Tab ise)
-      if (activeTab === 'company' && ['general_manager', 'hr'].includes(userRole)) {
-        // Varsa güncelle, yoksa ekle (upsert)
-        const { error: companyError } = await supabase
-          .from('company_settings')
-          .upsert({ 
-            id: 1, // Tek satır tutuyoruz
-            probation_months: companySettings.probation_months,
-            company_name: companySettings.company_name
-          });
-
-        if (companyError) throw companyError;
+      // 2. Şirket (Sadece yetkililer)
+      if (['general_manager', 'hr'].includes(userRole)) {
+        await supabase.from('company_settings').upsert({
+            id: 1, 
+            probation_months: parseInt(companySettings.probation_months),
+            company_name: companySettings.company_name,
+            company_logo: companySettings.company_logo
+        });
       }
 
-      // C) Şifre Değiştirme (Sadece Güvenlik Tabı ise ve input doluysa)
-      if (activeTab === 'security' && passwords.new) {
-         const passwordSuccess = await handlePasswordUpdate();
-         if (!passwordSuccess) throw new Error("Şifre güncellenemedi.");
-      }
-      
-      // ✅ Sidebar'daki avatarı güncellemek için
-      if (onProfileUpdate) {
-        await onProfileUpdate();
-      }
-      
-      alert('Değişiklikler başarıyla kaydedildi! ✅');
-
-    } catch (error) {
-      alert('Hata: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
+      if (onUpdate) await onUpdate(); // Sidebar'ı güncelle
+      alert('Kaydedildi! ✅');
+    } catch (error) { alert('Hata: ' + error.message); } finally { setIsLoading(false); }
   };
 
   // --- TABS ---
@@ -191,221 +185,128 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Ayarlar</h1>
-          <p className="text-gray-500">Profilinizi ve sistem yapılandırmasını yönetin.</p>
-        </div>
-        <button 
-          onClick={handleSave}
-          disabled={isLoading}
-          className="bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-70 font-medium"
-        >
+        <div><h1 className="text-2xl font-bold text-gray-800">Ayarlar</h1><p className="text-gray-500">Sistem yapılandırması.</p></div>
+        <button onClick={handleSave} disabled={isLoading} className="bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm font-medium">
           {isLoading ? <Loader2 className="animate-spin w-4 h-4"/> : <Save className="w-4 h-4" />} Kaydet
         </button>
       </div>
 
-      {/* TAB MENU */}
       <div className="flex overflow-x-auto border-b border-gray-200 bg-white px-4 rounded-t-xl scrollbar-hide">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${
-                activeTab === tab.id ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <Icon className="w-4 h-4" /> {tab.label}
+        {tabs.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-6 py-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === tab.id ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              <tab.icon className="w-4 h-4" /> {tab.label}
             </button>
-          );
-        })}
+        ))}
       </div>
 
-      {/* İÇERİK */}
-      <div className="bg-white p-8 rounded-b-xl border border-gray-100 min-h-[600px]">
+      <div className="bg-white p-8 rounded-b-xl border border-gray-100 min-h-[500px]">
         
-        {/* --- 1. PROFİL --- */}
+        {/* PROFİL */}
         {activeTab === 'profile' && (
-           <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-bottom-2">
+           <div className="max-w-4xl space-y-8">
               <div className="flex items-center gap-6 pb-6 border-b border-gray-100">
-                <div className="relative group cursor-pointer">
-                  {/* Avatar Mantığı */}
-                  <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg overflow-hidden flex items-center justify-center text-3xl font-bold bg-gradient-to-br from-blue-600 to-indigo-700 text-white">
-                     {profileData.avatar ? (
-                       <img src={profileData.avatar} alt="Profile" className="w-full h-full object-cover" />
-                     ) : (
-                       <span>{getInitials(profileData.name)}</span>
-                     )}
-                  </div>
-                  <div onClick={() => fileInputRef.current.click()} className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-                    <Camera className="w-6 h-6 text-white" />
-                  </div>
-                  <input type="file" ref={fileInputRef} onChange={handleAvatarUpload} className="hidden" accept="image/*"/>
+                <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}>
+                   <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg overflow-hidden flex items-center justify-center bg-gray-100">
+                     {profileData.avatar ? <img src={profileData.avatar} className="w-full h-full object-cover" /> : <span className="text-3xl font-bold text-gray-400">{profileData.name?.charAt(0)}</span>}
+                   </div>
+                   <input type="file" ref={fileInputRef} onChange={handleAvatarUpload} className="hidden" accept="image/*"/>
+                   <button className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full shadow-md hover:bg-blue-700"><Camera className="w-4 h-4"/></button>
                 </div>
-                <div>
-                   <h3 className="font-bold text-gray-800 text-lg">Profil Fotoğrafı</h3>
-                   <p className="text-sm text-gray-500 mb-3">JPG, PNG formatında (Max 2MB).</p>
-                   <button disabled={uploading} onClick={() => fileInputRef.current.click()} className="text-xs font-bold text-blue-600 border border-blue-200 bg-blue-50 px-3 py-1.5 rounded hover:bg-blue-100 transition-colors flex items-center gap-2">
-                     {uploading ? <Loader2 className="w-3 h-3 animate-spin"/> : <Upload className="w-3 h-3"/>}
-                     {uploading ? 'Yükleniyor...' : 'Fotoğraf Yükle'}
-                   </button>
-                </div>
+                <div><h3 className="font-bold text-gray-800 text-lg">Profil Fotoğrafı</h3><p className="text-sm text-gray-500">Fotoğraf seçin ve kaydedin.</p></div>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div><label className="block text-sm font-bold text-gray-700 mb-1.5">Ad Soyad</label><input type="text" className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={profileData.name} onChange={e=>setProfileData({...profileData, name: e.target.value})}/></div>
-                <div><label className="block text-sm font-bold text-gray-700 mb-1.5">Unvan</label><input type="text" disabled className="w-full border p-2.5 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed" value={profileData.position || ''}/></div>
-                <div><label className="block text-sm font-bold text-gray-700 mb-1.5">Email</label><input type="email" className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={profileData.email} onChange={e=>setProfileData({...profileData, email: e.target.value})}/></div>
-                <div><label className="block text-sm font-bold text-gray-700 mb-1.5">Telefon</label><input type="tel" className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={profileData.phone} onChange={e=>setProfileData({...profileData, phone: e.target.value})}/></div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Ad Soyad</label><input className="w-full border p-2.5 rounded-lg" value={profileData.name} onChange={e=>setProfileData({...profileData, name: e.target.value})}/></div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Unvan</label><input disabled className="w-full border p-2.5 rounded-lg bg-gray-50 text-gray-500" value={profileData.position || ''}/></div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Email</label><input disabled className="w-full border p-2.5 rounded-lg bg-gray-50 text-gray-500" value={profileData.email}/></div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Telefon</label><input className="w-full border p-2.5 rounded-lg" value={profileData.phone} onChange={e=>setProfileData({...profileData, phone: e.target.value})}/></div>
               </div>
-              <div><label className="block text-sm font-bold text-gray-700 mb-1.5">Hakkımda</label><textarea rows="3" className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Kısa bir biyografi..."></textarea></div>
            </div>
         )}
 
-        {/* --- 2. GÜVENLİK --- */}
+        {/* GÜVENLİK */}
         {activeTab === 'security' && (
-           <div className="max-w-xl space-y-6 animate-in fade-in slide-in-from-bottom-2">
-              <h3 className="text-lg font-bold text-gray-800 border-b pb-2">Şifre Değiştir</h3>
-              
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
               <div className="space-y-4">
-                 <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Yeni Şifre</label>
-                    <input 
-                        type="password" 
-                        placeholder="••••••••" 
-                        className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        value={passwords.new}
-                        onChange={(e) => setPasswords({...passwords, new: e.target.value})}
-                    />
-                 </div>
-                 <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Yeni Şifre (Tekrar)</label>
-                    <input 
-                        type="password" 
-                        placeholder="••••••••" 
-                        className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        value={passwords.confirm}
-                        onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
-                    />
-                 </div>
+                 <h3 className="font-bold text-gray-800 border-b pb-2 flex items-center gap-2"><Lock className="w-4 h-4"/> Şifre Değiştir</h3>
+                 <div><label className="block text-xs font-bold text-gray-500 mb-1">Mevcut Şifre</label><input type="password" className="w-full border p-2 rounded" value={passwords.old} onChange={e => setPasswords({...passwords, old: e.target.value})} /></div>
+                 <div><label className="block text-xs font-bold text-gray-500 mb-1">Yeni Şifre</label><input type="password" className="w-full border p-2 rounded" value={passwords.new} onChange={e => setPasswords({...passwords, new: e.target.value})} /></div>
+                 <div><label className="block text-xs font-bold text-gray-500 mb-1">Yeni Şifre (Tekrar)</label><input type="password" className="w-full border p-2 rounded" value={passwords.confirm} onChange={e => setPasswords({...passwords, confirm: e.target.value})} /></div>
+                 <button onClick={handlePasswordUpdate} disabled={isLoading} className="bg-gray-800 text-white px-4 py-2 rounded text-sm font-bold w-full hover:bg-gray-900">Şifreyi Güncelle</button>
               </div>
 
-              <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 flex gap-3 mt-6">
-                 <ShieldAlert className="w-6 h-6 text-orange-600 flex-shrink-0" />
-                 <div>
-                    <h4 className="font-bold text-orange-800 text-sm">İki Faktörlü Doğrulama (2FA)</h4>
-                    <p className="text-xs text-orange-700 mt-1">Hesabınızı daha güvenli hale getirmek için aktifleştirin.</p>
-                    <button className="mt-2 text-xs font-bold text-orange-700 bg-white border border-orange-200 px-3 py-1 rounded hover:bg-orange-100 transition-colors">Aktifleştir</button>
-                 </div>
+              <div className="space-y-4">
+                 <h3 className="font-bold text-gray-800 border-b pb-2 flex items-center gap-2"><Mail className="w-4 h-4"/> E-posta Değiştir</h3>
+                 <div className="bg-yellow-50 p-3 rounded text-xs text-yellow-800 border border-yellow-200">Email değişikliği için mevcut şifrenizi girmeniz gerekmektedir.</div>
+                 <div><label className="block text-xs font-bold text-gray-500 mb-1">Yeni E-posta Adresi</label><input type="email" className="w-full border p-2 rounded" value={newEmail} onChange={e => setNewEmail(e.target.value)} /></div>
+                 <div><label className="block text-xs font-bold text-gray-500 mb-1">Mevcut Şifre (Onay için)</label><input type="password" className="w-full border p-2 rounded" value={emailPassword} onChange={e => setEmailPassword(e.target.value)} /></div>
+                 <button onClick={handleEmailUpdate} disabled={isLoading} className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold w-full hover:bg-blue-700">Değişiklik Onayı Gönder</button>
               </div>
            </div>
         )}
 
-        {/* --- 3. BİLDİRİMLER (Mock - Değişiklik Yok) --- */}
+        {/* ŞİRKET AYARLARI */}
+        {activeTab === 'company' && (
+          <div className="max-w-4xl space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Şirket Adı</label>
+                  <input className="w-full border rounded-lg p-2.5" value={companySettings.company_name} onChange={(e) => setCompanySettings({...companySettings, company_name: e.target.value})}/>
+                  <p className="text-xs text-gray-500 mt-1">Sidebar'da görünecek isim.</p>
+               </div>
+               <div>
+                 <label className="block text-sm font-bold text-gray-700 mb-1">Deneme Süresi (Ay)</label>
+                 <input type="number" className="w-full border rounded-lg p-2.5" value={companySettings.probation_months} onChange={(e) => setCompanySettings({...companySettings, probation_months: e.target.value})}/>
+               </div>
+               
+               <div className="md:col-span-2 flex items-center gap-6 pt-4 border-t border-gray-100">
+                  <div className="w-24 h-24 bg-gray-50 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300 overflow-hidden relative">
+                      {companySettings.company_logo ? 
+                        <img src={companySettings.company_logo} className="w-full h-full object-contain" /> : 
+                        <Building2 className="w-8 h-8 text-gray-400" />
+                      }
+                  </div>
+                  <div>
+                      <h3 className="font-bold text-gray-800">Şirket Logosu</h3>
+                      <button onClick={() => logoInputRef.current.click()} disabled={uploading} className="text-xs border border-gray-300 px-3 py-1.5 rounded bg-white hover:bg-gray-50 flex items-center gap-2 mt-2">
+                        {uploading ? <Loader2 className="w-3 h-3 animate-spin"/> : <Upload className="w-3 h-3" />} Logo Yükle
+                      </button>
+                      <input type="file" ref={logoInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*"/>
+                  </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* BİLDİRİMLER */}
         {activeTab === 'notifications' && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+            <div className="space-y-6">
               <h2 className="text-lg font-bold text-gray-800 border-b pb-4">Bildirim Tercihleri</h2>
               <div className="space-y-4">
-                {[
-                  { title: "Maaş Ödemeleri", desc: "Maaşlar yattığında bildir.", icon: CreditCard },
-                  { title: "Yeni Başvurular", desc: "Yeni aday eklendiğinde bildir.", icon: User },
-                  { title: "İzin Talepleri", desc: "Personel izin talep ettiğinde bildir.", icon: Clock },
-                  { title: "Sistem Uyarıları", desc: "Bakım ve güncellemelerde bildir.", icon: AlertTriangle }
-                ].map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-                    <div className="flex items-center gap-4">
-                        <div className="p-2 bg-gray-100 rounded-lg"><item.icon className="w-5 h-5 text-gray-500"/></div>
-                        <div><h4 className="font-bold text-gray-800 text-sm">{item.title}</h4><p className="text-xs text-gray-500">{item.desc}</p></div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" defaultChecked className="sr-only peer" />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white peer-checked:bg-blue-600 transition-all"></div>
-                    </label>
+                {[{title: "Maaşlar", desc: "Ödeme yapıldığında bildirim al."}, {title: "İzinler", desc: "Yeni izin taleplerini bildir."}].map((item, i) => (
+                  <div key={i} className="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:bg-gray-50">
+                    <div><h4 className="font-bold text-gray-800 text-sm">{item.title}</h4><p className="text-xs text-gray-500">{item.desc}</p></div>
+                    <input type="checkbox" defaultChecked className="accent-blue-600 w-4 h-4"/>
                   </div>
                 ))}
               </div>
             </div>
         )}
 
-        {/* --- 4. ŞİRKET AYARLARI --- */}
-        {activeTab === 'company' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
-            <h2 className="text-lg font-bold text-gray-800 border-b pb-4">Şirket Yapılandırması</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 relative overflow-hidden">
-                 <div className="absolute top-0 right-0 p-4 opacity-10"><Clock className="w-24 h-24 text-blue-600"/></div>
-                 <label className="block text-sm font-bold text-blue-900 mb-2 flex items-center gap-2 relative z-10"><Clock className="w-4 h-4"/> Deneme Süreci Uzunluğu</label>
-                 <div className="flex items-center gap-3 relative z-10">
-                    <input type="number" min="1" max="12" className="w-24 border border-blue-200 rounded-lg p-2.5 text-center font-bold" value={companySettings.probation_months} onChange={(e) => setCompanySettings({...companySettings, probation_months: e.target.value})}/>
-                    <span className="font-bold text-gray-700">Ay</span>
-                 </div>
-              </div>
-              <div><label className="block text-sm font-bold text-gray-700 mb-1">Şirket Adı</label><input className="w-full border rounded-lg p-2.5" value={companySettings.company_name} onChange={(e) => setCompanySettings({...companySettings, company_name: e.target.value})}/></div>
-              <div className="md:col-span-2 flex items-center gap-6 pt-4 border-t border-gray-100">
-                  <div className="w-20 h-20 bg-gray-50 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300"><Building2 className="w-8 h-8 text-gray-400" /></div>
-                  <div><h3 className="font-bold text-gray-800">Şirket Logosu</h3><button className="text-sm border border-gray-300 px-3 py-1.5 rounded bg-white hover:bg-gray-50 flex items-center gap-2 mt-2"><Upload className="w-3 h-3" /> Değiştir</button></div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* --- 5. FATURALANDIRMA (Mock - Değişiklik Yok) --- */}
+        {/* FATURA */}
         {activeTab === 'billing' && (
-           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+           <div className="space-y-8">
               <h2 className="text-lg font-bold text-gray-800 border-b pb-4">Plan ve Faturalandırma</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Kart */}
-                  <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-6 text-white shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-10"><CreditCard className="w-32 h-32 text-white"/></div>
-                    <div className="relative z-10">
-                        <p className="text-gray-400 text-sm font-medium mb-1">Mevcut Plan</p>
-                        <h3 className="text-3xl font-bold flex items-center gap-3">Pro Plan <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-full uppercase">Aktif</span></h3>
-                        <p className="text-gray-400 text-sm mt-4">Sonraki yenileme: 12 Şubat 2026</p>
-                    </div>
-                  </div>
-                  {/* Ödeme Yöntemi */}
-                  <div className="border border-gray-200 rounded-xl p-6 flex flex-col justify-between bg-gray-50/50">
-                     <div>
-                        <h4 className="font-bold text-gray-800 mb-4">Ödeme Yöntemi</h4>
-                        <div className="flex items-center gap-4 bg-white p-4 rounded-lg border border-gray-200">
-                            <div className="w-12 h-8 bg-[#1a1f71] rounded flex items-center justify-center text-white text-xs font-bold italic">VISA</div>
-                            <div><p className="font-bold text-gray-800">Visa •••• 4242</p><p className="text-xs text-gray-500">12/28</p></div>
-                            <CheckCircle className="w-5 h-5 text-green-500 ml-auto"/>
-                        </div>
-                     </div>
-                     <button className="w-full mt-4 text-blue-600 font-bold text-sm border border-blue-200 bg-white py-2 rounded-lg hover:bg-blue-50">Kartı Güncelle</button>
-                  </div>
-              </div>
-              
-              {/* Fatura Tablosu */}
-              <div>
-                  <h3 className="font-bold text-gray-800 mb-4 mt-4">Fatura Geçmişi</h3>
-                  <div className="border border-gray-200 rounded-xl overflow-hidden">
-                      <table className="w-full text-left text-sm">
-                          <thead className="bg-gray-50 border-b border-gray-200 text-gray-500">
-                              <tr><th className="px-6 py-3 font-medium">Tarih</th><th className="px-6 py-3 font-medium">Tutar</th><th className="px-6 py-3 font-medium">Durum</th><th className="px-6 py-3 font-medium text-right">İndir</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                              {[
-                                  { date: '12 Oca 2026', amount: '$29.00', status: 'Paid' },
-                                  { date: '12 Ara 2025', amount: '$29.00', status: 'Paid' },
-                              ].map((inv, i) => (
-                                  <tr key={i} className="hover:bg-gray-50">
-                                      <td className="px-6 py-4 font-medium text-gray-700">{inv.date}</td>
-                                      <td className="px-6 py-4 text-gray-600">{inv.amount}</td>
-                                      <td className="px-6 py-4"><span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-bold">Ödendi</span></td>
-                                      <td className="px-6 py-4 text-right"><button className="text-gray-400 hover:text-blue-600"><Download className="w-4 h-4"/></button></td>
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
+                  <div className="bg-gray-900 rounded-xl p-6 text-white shadow-xl relative overflow-hidden">
+                    <CreditCard className="absolute top-4 right-4 text-gray-700 w-24 h-24 opacity-20"/>
+                    <h3 className="text-2xl font-bold">Pro Plan</h3>
+                    <p className="text-gray-400 text-sm mt-4">Sonraki yenileme: 12 Şubat 2026</p>
                   </div>
               </div>
            </div>
         )}
+
       </div>
     </div>
   );
