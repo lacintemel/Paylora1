@@ -57,22 +57,40 @@ export default function Payroll({ currentUserId, userRole }) {
     
     setCalculating(true);
     try {
-      // A) Önce tüm AKTİF çalışanları ve maaşlarını çek
-      const { data: activeEmployees } = await supabase
+      // 1. Adım: Aktif çalışanları çek
+      const { data: activeEmployees, error: empError } = await supabase
         .from('employees')
         .select('id, salary')
         .eq('status', 'Active');
 
+      if (empError) throw empError;
       if (!activeEmployees || activeEmployees.length === 0) throw new Error("Aktif çalışan bulunamadı.");
 
-      // B) Bu ay için zaten kayıt var mı kontrol et (Çift kayıt olmasın)
-      // (Basitlik adına: Supabase insert sırasında conflict olmasın diye kontrol edilebilir ama şimdilik direkt ekliyoruz)
-      
-      // C) Kayıtları Hazırla
-      const payrollRecords = activeEmployees.map(emp => {
+      // 2. Adım: Bu ay zaten maaşı hesaplanmış olanları bul
+      const { data: existingPayrolls, error: existingError } = await supabase
+        .from('payrolls')
+        .select('employee_id')
+        .eq('period', selectedMonth);
+
+      if (existingError) throw existingError;
+
+      // Zaten hesaplanmış ID'leri bir listeye al (Örn: [1, 5, 8])
+      const existingEmployeeIds = existingPayrolls.map(p => p.employee_id);
+
+      // 3. Adım: Sadece maaşı HESAPLANMAMIŞ olanları filtrele
+      const employeesToPay = activeEmployees.filter(emp => !existingEmployeeIds.includes(emp.id));
+
+      if (employeesToPay.length === 0) {
+        alert("Bu dönem için tüm aktif personelin maaşı zaten oluşturulmuş! ✅");
+        setCalculating(false);
+        return;
+      }
+
+      // 4. Adım: Sadece yeni kişiler için kayıt hazırla
+      const payrollRecords = employeesToPay.map(emp => {
         const base = emp.salary / 12; // Yıllık maaşı aya böl
-        const tax = base * 0.15; // %15 Vergi (Örnek)
-        const bonus = 0; // Varsayılan bonus
+        const tax = base * 0.15; // %15 Vergi
+        const bonus = 0; 
         const net = base - tax + bonus;
 
         return {
@@ -82,17 +100,17 @@ export default function Payroll({ currentUserId, userRole }) {
           deductions: Math.floor(tax),
           bonus: bonus,
           net_pay: Math.floor(net),
-          status: 'Pending', // Bekliyor
+          status: 'Pending', 
           payment_date: null
         };
       });
 
-      // D) Toplu Ekleme (Bulk Insert)
+      // 5. Adım: Veritabanına ekle
       const { error } = await supabase.from('payrolls').insert(payrollRecords);
 
       if (error) throw error;
       
-      alert(`${payrollRecords.length} personelin maaş kaydı oluşturuldu!`);
+      alert(`${payrollRecords.length} yeni maaş kaydı oluşturuldu! (${activeEmployees.length - payrollRecords.length} kişi zaten mevcuttu)`);
       fetchPayrolls();
 
     } catch (error) {
