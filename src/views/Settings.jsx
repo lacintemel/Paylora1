@@ -3,7 +3,7 @@ import { supabase } from '../supabase';
 import { 
   Building2, Save, Clock, User, Lock, Bell, CreditCard, 
   Camera, ShieldAlert, Upload, Loader2, CheckCircle, Download,
-  AlertTriangle, Mail
+  AlertTriangle
 } from 'lucide-react';
 
 export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
@@ -22,8 +22,11 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
     avatar: null
   });
 
+  // Şifre Değiştirme State'i
+  const [passwords, setPasswords] = useState({ new: '', confirm: '' });
+
   const [companySettings, setCompanySettings] = useState({
-    probation_months: 3,
+    probation_months: 2,
     company_name: '',
   });
 
@@ -40,6 +43,7 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
   // --- 1. VERİ ÇEKME ---
   useEffect(() => {
     if (currentUserId) fetchProfile();
+    // Sadece yöneticiyse şirket ayarlarını çek
     if (['general_manager', 'hr'].includes(userRole)) fetchCompanySettings();
   }, [currentUserId, userRole]);
 
@@ -59,8 +63,9 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
 
   const fetchCompanySettings = async () => {
     try {
-      const { data } = await supabase.from('company_settings').select('*').single();
+      const { data, error } = await supabase.from('company_settings').select('*').single();
       if (data) setCompanySettings(data);
+      // Eğer tablo boşsa (henüz satır yoksa) varsayılan bırakıyoruz
     } catch (error) {
       console.error("Şirket ayarları çekilemedi:", error);
     }
@@ -74,39 +79,60 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
       if (!file) return;
 
       const fileExt = file.name.split('.').pop();
-      const fileName = `${currentUserId}-${Math.random()}.${fileExt}`;
+      const fileName = `${currentUserId}-${Date.now()}.${fileExt}`;
       const filePath = `${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file);
+        .upload(filePath, file, { upsert: true });
 
-      if (uploadError) {
-        if (uploadError.message.includes("Bucket not found")) {
-            throw new Error("Supabase panelinde 'avatars' adında Public Bucket yok!");
-        }
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
       setProfileData(prev => ({ ...prev, avatar: publicUrl }));
-      alert("Fotoğraf başarıyla yüklendi! Kaydet butonuna basmayı unutmayın.");
+      // Otomatik kaydetme hissi için burada veritabanını da güncelleyebiliriz
+      // ama "Kaydet" butonuna basılmasını beklemek daha güvenli UX.
+      alert("Fotoğraf yüklendi! Kalıcı olması için 'Kaydet' butonuna basınız.");
 
     } catch (error) {
-      alert('Yükleme hatası: ' + error.message);
+      alert('Yükleme hatası: ' + error.message + "\n(Supabase panelinde 'avatars' public bucket oluşturduğuna emin ol)");
     } finally {
       setUploading(false);
     }
   };
 
-  // --- 3. KAYDETME ---
+  // --- 3. ŞİFRE DEĞİŞTİRME ---
+  const handlePasswordUpdate = async () => {
+    if (passwords.new.length < 6) {
+        alert("Şifre en az 6 karakter olmalı.");
+        return false;
+    }
+    if (passwords.new !== passwords.confirm) {
+        alert("Şifreler uyuşmuyor.");
+        return false;
+    }
+
+    const { error } = await supabase.auth.updateUser({
+        password: passwords.new
+    });
+
+    if (error) {
+        alert("Şifre değiştirme hatası: " + error.message);
+        return false;
+    }
+    
+    setPasswords({ new: '', confirm: '' }); // Inputları temizle
+    return true;
+  };
+
+  // --- 4. GENEL KAYDETME ---
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      // Profil Güncelle
+      // A) Profil Güncelle
       const { error: profileError } = await supabase
         .from('employees')
         .update({
@@ -119,25 +145,32 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
 
       if (profileError) throw profileError;
 
-      // Şirket Ayarları
+      // B) Şirket Ayarları (Sadece Yetkili ve İlgili Tab ise)
       if (activeTab === 'company' && ['general_manager', 'hr'].includes(userRole)) {
+        // Varsa güncelle, yoksa ekle (upsert)
         const { error: companyError } = await supabase
           .from('company_settings')
-          .update({ 
+          .upsert({ 
+            id: 1, // Tek satır tutuyoruz
             probation_months: companySettings.probation_months,
             company_name: companySettings.company_name
-          })
-          .eq('id', 1);
+          });
 
         if (companyError) throw companyError;
       }
+
+      // C) Şifre Değiştirme (Sadece Güvenlik Tabı ise ve input doluysa)
+      if (activeTab === 'security' && passwords.new) {
+         const passwordSuccess = await handlePasswordUpdate();
+         if (!passwordSuccess) throw new Error("Şifre güncellenemedi.");
+      }
       
-      // ✅ KRİTİK NOKTA: App.jsx'e haber veriyoruz
+      // ✅ Sidebar'daki avatarı güncellemek için
       if (onProfileUpdate) {
         await onProfileUpdate();
       }
       
-      alert('Tüm değişiklikler başarıyla kaydedildi! ✅');
+      alert('Değişiklikler başarıyla kaydedildi! ✅');
 
     } catch (error) {
       alert('Hata: ' + error.message);
@@ -236,14 +269,30 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
         {activeTab === 'security' && (
            <div className="max-w-xl space-y-6 animate-in fade-in slide-in-from-bottom-2">
               <h3 className="text-lg font-bold text-gray-800 border-b pb-2">Şifre Değiştir</h3>
-              <div className="p-4 bg-yellow-50 text-yellow-800 rounded-lg text-sm border border-yellow-200 flex items-start gap-3">
-                 <ShieldAlert className="w-5 h-5 flex-shrink-0 mt-0.5"/>
-                 <div><span className="font-bold">Bilgi:</span> Güvenlik ayarları demo modundadır.</div>
-              </div>
+              
               <div className="space-y-4">
-                 <div><label className="block text-sm font-bold text-gray-700 mb-1">Mevcut Şifre</label><input type="password" placeholder="••••••••" className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                 <div><label className="block text-sm font-bold text-gray-700 mb-1">Yeni Şifre</label><input type="password" placeholder="••••••••" className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"/></div>
+                 <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Yeni Şifre</label>
+                    <input 
+                        type="password" 
+                        placeholder="••••••••" 
+                        className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        value={passwords.new}
+                        onChange={(e) => setPasswords({...passwords, new: e.target.value})}
+                    />
+                 </div>
+                 <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Yeni Şifre (Tekrar)</label>
+                    <input 
+                        type="password" 
+                        placeholder="••••••••" 
+                        className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        value={passwords.confirm}
+                        onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
+                    />
+                 </div>
               </div>
+
               <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 flex gap-3 mt-6">
                  <ShieldAlert className="w-6 h-6 text-orange-600 flex-shrink-0" />
                  <div>
@@ -255,7 +304,7 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
            </div>
         )}
 
-        {/* --- 3. BİLDİRİMLER --- */}
+        {/* --- 3. BİLDİRİMLER (Mock - Değişiklik Yok) --- */}
         {activeTab === 'notifications' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               <h2 className="text-lg font-bold text-gray-800 border-b pb-4">Bildirim Tercihleri</h2>
@@ -303,7 +352,7 @@ export default function Settings({ userRole, currentUserId, onProfileUpdate }) {
           </div>
         )}
 
-        {/* --- 5. FATURALANDIRMA --- */}
+        {/* --- 5. FATURALANDIRMA (Mock - Değişiklik Yok) --- */}
         {activeTab === 'billing' && (
            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
               <h2 className="text-lg font-bold text-gray-800 border-b pb-4">Plan ve Faturalandırma</h2>

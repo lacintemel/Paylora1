@@ -1,269 +1,168 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../supabase'; // 👈 SUPABASE BAĞLANTISI
+import { supabase } from '../../supabase'; 
 import { 
-  Users, 
-  UserPlus, 
-  FileWarning, 
-  Calendar, 
-  Search, 
-  Clock, 
-  Briefcase,
-  CheckSquare
+  Users, Calendar, Clock, UserPlus, CheckCircle, AlertCircle, Search
 } from 'lucide-react';
 
 export default function HRDashboard({ onNavigate }) {
-  
-  // --- STATE ---
   const [stats, setStats] = useState({
-    totalEmployees: 0,
     activeEmployees: 0,
-    probation: 0,   // Deneme Sürecindekiler
-    candidates: 0,  // Toplam Başvuru/Aday
-    openPositions: 0 // Benzersiz pozisyon sayısı
+    pendingLeaves: 0,
+    presentToday: 0
   });
-  
-  const [recruitmentList, setRecruitmentList] = useState([]); // Aday listesi (Tablo için)
+  const [newHires, setNewHires] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // --- VERİ ÇEKME ---
   useEffect(() => {
-    fetchDashboardData();
+    fetchHRData();
   }, []);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    
+  const fetchHRData = async () => {
     try {
-      // 1. ÇALIŞANLARI ÇEK
-      const { data: employees, error: empError } = await supabase
+      setLoading(true);
+      const today = new Date().toISOString().split('T')[0];
+
+      // 1. Aktif Çalışan Sayısı
+      const { count: empCount } = await supabase
         .from('employees')
-        .select('*');
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'Active');
 
-      if (empError) throw empError;
+      // 2. Bekleyen İzin Talepleri
+      const { count: leaveCount } = await supabase
+        .from('leave_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'Pending');
 
-      // 2. ADAYLARI ÇEK
-      const { data: candidates, error: candError } = await supabase
-        .from('candidates')
-        .select('*');
+      // 3. Bugün Ofiste Olanlar (Zaman Kaydı Olanlar)
+      const { count: presentCount } = await supabase
+        .from('time_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('date', today);
 
-      if (candError) throw candError;
+      // 4. Son Eklenen 3 Çalışan
+      const { data: latestEmps } = await supabase
+        .from('employees')
+        .select('name, position, department, avatar, start_date')
+        .order('id', { ascending: false })
+        .limit(3);
 
-      // --- HESAPLAMALAR ---
-      
-      // A) Aktif Çalışanlar (Sadece statüsü 'Active' olanlar)
-      const activeCount = employees.filter(e => e.status === 'Active').length;
-      const totalCount = activeCount;
-      // B) Deneme Süreci (Sadece çalışanlar tablosunda olup, 6 aydan (180 gün) yeni başlayanlar)
-      const probationCount = employees.filter(e => {
-        if (!e.start_date) return false;
-        const start = new Date(e.start_date);
-        const today = new Date();
-        const diffTime = Math.abs(today - start);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        return diffDays < 180; 
-      }).length;
-
-      // C) İşe Alım İstatistikleri
-      const uniqueRoles = [...new Set(candidates.map(c => c.role))].length; // Kaç farklı pozisyon var
-
-      // State'i Güncelle
       setStats({
-        totalEmployees: employees.length,
-        activeEmployees: activeCount,
-        probation: probationCount,
-        candidates: candidates.length,
-        openPositions: uniqueRoles
+        activeEmployees: empCount || 0,
+        pendingLeaves: leaveCount || 0,
+        presentToday: presentCount || 0
       });
-
-      // Tablo için adayları kaydet (İlk 5 tanesi)
-      setRecruitmentList(candidates.slice(0, 5));
+      setNewHires(latestEmps || []);
 
     } catch (error) {
-      console.error("Dashboard veri hatası:", error.message);
+      console.error("HR Veri Hatası:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Yaklaşan Olaylar (Şimdilik Statik Kalabilir veya ileride DB'den çekilebilir)
-  const upcomingEvents = [
-    { id: 1, title: 'Ali Yılmaz - Sözleşme Bitişi', date: '2 Gün Sonra', type: 'warning' },
-    { id: 2, title: 'Şirket Yemeği', date: '15 Şubat', type: 'celebration' },
-  ];
+  // Avatar Helper
+  const renderAvatar = (emp) => {
+    if (emp.avatar && emp.avatar.startsWith('http')) {
+        return <img src={emp.avatar} alt="av" className="w-full h-full object-cover"/>;
+    }
+    return emp.avatar || emp.name.charAt(0).toUpperCase();
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
-      {/* --- BAŞLIK --- */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* BAŞLIK */}
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">İK Operasyon Merkezi</h1>
-          <p className="text-gray-500">
-            {loading ? 'Veriler güncelleniyor...' : 'Güncel şirket verileri ve işe alım özeti.'}
-          </p>
+          <h1 className="text-2xl font-bold text-gray-800">İK Paneli</h1>
+          <p className="text-gray-500">Operasyonel durum ve personel takibi.</p>
         </div>
-        <div className="flex gap-2">
-            <button onClick={() => onNavigate('leave')} className="bg-white border border-gray-200 text-gray-700 px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50 text-sm font-medium transition-colors">
-                <Calendar className="w-4 h-4" /> Yıllık İzin
-            </button>
-            <button onClick={() => onNavigate('payroll')} className="bg-white border border-gray-200 text-gray-700 px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50 text-sm font-medium transition-colors">
-                <CheckSquare className="w-4 h-4" /> Bordro
-            </button>
-            <button onClick={() => onNavigate('recruitment')} className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-purple-700 transition-colors">
-              <UserPlus className="w-4 h-4" /> Yeni İlan / Aday
-            </button>
+        <button 
+           onClick={() => onNavigate('employees')}
+           className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm"
+        >
+           <UserPlus className="w-4 h-4"/> Personel Ekle
+        </button>
+      </div>
+
+      {/* İSTATİSTİK KARTLARI */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* Aktif Personel */}
+        <div onClick={() => onNavigate('employees')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:border-blue-200 cursor-pointer transition-all flex items-center justify-between">
+           <div>
+              <p className="text-sm font-bold text-gray-500">Aktif Personel</p>
+              <h3 className="text-3xl font-bold text-gray-800 mt-1">{loading ? '...' : stats.activeEmployees}</h3>
+              <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle className="w-3 h-3"/> Sistemde kayıtlı</p>
+           </div>
+           <div className="p-3 bg-blue-50 rounded-xl text-blue-600"><Users className="w-6 h-6"/></div>
+        </div>
+
+        {/* Bekleyen İzinler */}
+        <div onClick={() => onNavigate('leave')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:border-orange-200 cursor-pointer transition-all flex items-center justify-between">
+           <div>
+              <p className="text-sm font-bold text-gray-500">İzin Talepleri</p>
+              <h3 className="text-3xl font-bold text-gray-800 mt-1">{loading ? '...' : stats.pendingLeaves}</h3>
+              <p className="text-xs text-orange-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Onay bekliyor</p>
+           </div>
+           <div className="p-3 bg-orange-50 rounded-xl text-orange-600"><Calendar className="w-6 h-6"/></div>
+        </div>
+
+        {/* Ofiste Olanlar */}
+        <div onClick={() => onNavigate('time-tracking')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:border-green-200 cursor-pointer transition-all flex items-center justify-between">
+           <div>
+              <p className="text-sm font-bold text-gray-500">Bugün Ofiste</p>
+              <h3 className="text-3xl font-bold text-gray-800 mt-1">{loading ? '...' : stats.presentToday}</h3>
+              <p className="text-xs text-gray-400 mt-1">Katılım oranı normal</p>
+           </div>
+           <div className="p-3 bg-green-50 rounded-xl text-green-600"><Clock className="w-6 h-6"/></div>
         </div>
       </div>
 
-      {/* --- KPI KARTLARI (CANLI VERİ) --- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        
-        {/* Kart 1: Toplam Personel */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Toplam Personel</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-2">
-                {loading ? '...' : stats.totalEmployees}
-              </h3>
+      {/* ALT BÖLÜM: YENİ KATILANLAR */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+         
+         {/* Son İşe Alımlar */}
+         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+            <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+               <UserPlus className="w-5 h-5 text-purple-600"/> Aramıza Yeni Katılanlar
+            </h3>
+            <div className="space-y-4">
+               {newHires.length === 0 ? (
+                  <p className="text-gray-400 text-sm italic">Henüz yeni kayıt yok.</p>
+               ) : newHires.map((emp, idx) => (
+                  <div key={idx} className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-lg transition-colors">
+                     <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600 overflow-hidden border border-white shadow-sm">
+                        {renderAvatar(emp)}
+                     </div>
+                     <div>
+                        <h4 className="font-bold text-gray-800 text-sm">{emp.name}</h4>
+                        <p className="text-xs text-gray-500">{emp.position} • {emp.department}</p>
+                     </div>
+                     <div className="ml-auto text-xs text-gray-400">
+                        {new Date(emp.start_date).toLocaleDateString('tr-TR')}
+                     </div>
+                  </div>
+               ))}
             </div>
-            <div className="p-3 bg-purple-50 rounded-lg text-purple-600"><Users className="w-6 h-6" /></div>
-          </div>
-          <p className="mt-4 text-sm text-green-600 font-medium">
-             {loading ? '...' : stats.activeEmployees} aktif çalışan
-          </p>
-        </div>
-
-        {/* Kart 2: İşe Alım (Başvurular) */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Toplam Başvuru</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-2">
-                {loading ? '...' : stats.candidates}
-              </h3>
-            </div>
-            <div className="p-3 bg-blue-50 rounded-lg text-blue-600"><Search className="w-6 h-6" /></div>
-          </div>
-          <p className="mt-4 text-sm text-gray-500">
-             {stats.openPositions} farklı pozisyon için
-          </p>
-        </div>
-
-        {/* Kart 3: Deneme Süreci */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Deneme Süreci</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-2">
-                 {loading ? '...' : stats.probation}
-              </h3>
-            </div>
-            <div className="p-3 bg-orange-50 rounded-lg text-orange-600"><Clock className="w-6 h-6" /></div>
-          </div>
-          <p className="mt-4 text-sm text-orange-600 font-medium">yeni başlayanlar</p>
-        </div>
-
-        {/* Kart 4: Eksik Evrak (Sabit/Mock) */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Eksik Evrak</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-2">3</h3>
-            </div>
-            <div className="p-3 bg-red-50 rounded-lg text-red-600"><FileWarning className="w-6 h-6" /></div>
-          </div>
-          <p className="mt-4 text-sm text-red-600 font-medium">aciliyet yüksek</p>
-        </div>
-      </div>
-
-      {/* --- ALT TABLOLAR --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* SOL: Son Başvurular Tablosu (Canlı Veri) */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-6">Son Eklenen Adaylar</h3>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b border-gray-100 uppercase bg-gray-50">
-                  <th className="py-3 px-4 font-medium rounded-l-lg">Aday İsmi</th>
-                  <th className="py-3 px-4 font-medium">Pozisyon</th>
-                  <th className="py-3 px-4 font-medium">Aşama</th>
-                  <th className="py-3 px-4 font-medium text-right rounded-r-lg">İletişim</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm">
-                {recruitmentList.length > 0 ? (
-                  recruitmentList.map((cand) => (
-                    <tr key={cand.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                      <td className="py-4 px-4 font-medium text-gray-800">{cand.name}</td>
-                      <td className="py-4 px-4 text-gray-600 flex items-center gap-2">
-                        <Briefcase className="w-3 h-3 text-gray-400" />
-                        {cand.role}
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-bold">
-                          {cand.stage}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-right text-gray-500 text-xs">
-                        {cand.email}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="4" className="py-8 text-center text-gray-500">
-                      Henüz başvuru bulunmuyor.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          
-          <div className="mt-4 pt-4 border-t border-gray-100 text-center">
-            <button 
-              onClick={() => onNavigate('recruitment')}
-              className="text-sm text-purple-600 font-medium hover:underline"
-            >
-              Tüm Adayları Yönet →
+            <button onClick={() => onNavigate('employees')} className="w-full mt-4 text-sm text-blue-600 font-bold hover:underline">
+               Tüm Personeli Gör
             </button>
-          </div>
-        </div>
+         </div>
 
-        {/* SAĞ: Hatırlatıcılar */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-gray-500" />
-            Yaklaşan Olaylar
-          </h3>
-          
-          <div className="space-y-4">
-            {upcomingEvents.map((event) => (
-              <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                <div className={`mt-1 w-2 h-2 rounded-full ${event.type === 'warning' ? 'bg-red-500' : 'bg-green-500'}`}></div>
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{event.title}</p>
-                  <p className="text-xs text-gray-500 mt-1">{event.date}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 p-4 bg-purple-50 rounded-xl">
-             <h4 className="text-sm font-bold text-purple-900 mb-2">Hızlı Aksiyon</h4>
-             <button onClick={() => onNavigate('payroll')} className="w-full bg-white text-purple-700 text-xs font-bold py-2 rounded border border-purple-200 hover:bg-purple-100 mb-2">
-                Bordro Onayla
-             </button>
-             <button onClick={() => onNavigate('leave')} className="w-full bg-white text-purple-700 text-xs font-bold py-2 rounded border border-purple-200 hover:bg-purple-100">
-                Yıllık İzin Planı
-             </button>
-          </div>
-        </div>
-
+         {/* Hızlı Erişim (Mock) */}
+         <div className="bg-gradient-to-br from-indigo-900 to-purple-900 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
+             <div className="relative z-10">
+                <h3 className="font-bold text-lg mb-2">Performans Dönemi Yaklaşıyor</h3>
+                <p className="text-indigo-200 text-sm mb-6">Yıllık değerlendirme süreci 1 Şubat'ta başlayacak. Form şablonlarını hazırlamayı unutmayın.</p>
+                <button className="bg-white text-indigo-900 px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-50 transition-colors">
+                   Süreci Planla
+                </button>
+             </div>
+             {/* Dekoratif Arkaplan */}
+             <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl"></div>
+         </div>
       </div>
     </div>
   );

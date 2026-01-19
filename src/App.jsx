@@ -6,7 +6,7 @@ import { Bell } from 'lucide-react';
 import Sidebar from './components/layout/Sidebar';
 import Login from './views/Login';
 import NotificationMenu from './components/NotificationMenu';
-
+import Header from './components/layout/Header'; 
 // --- DASHBOARDLAR ---
 import GeneralManagerDashboard from './views/dashboards/GeneralManagerDashboard';
 import HRDashboard from './views/dashboards/HRDashboard';
@@ -157,7 +157,9 @@ export default function App() {
         if (selectedEmployee) return <EmployeeDetail employee={selectedEmployee} onBack={() => setSelectedEmployee(null)} />;
         return <Employees onViewProfile={(emp) => setSelectedEmployee(emp)} userRole={userRole} />;
       
-      case 'payroll': return <Payroll />;
+      case 'payroll': 
+        // 👇 GÜNCELLENEN SATIR: Props eklendi
+        return <Payroll currentUserId={currentUser?.id} userRole={userRole} />;
       case 'recruitment': return <Recruitment />;
       
       case 'time-tracking': 
@@ -172,11 +174,14 @@ export default function App() {
         return <Settings 
                  userRole={userRole} 
                  currentUserId={currentUser?.id} 
-                 onProfileUpdate={refreshUser} 
+                 onProfileUpdate={fetchCurrentUser}
                />;
       
-      case 'documents': return <Documents />;
-      default: return renderDashboardByRole();
+      // src/App.jsx
+
+      case 'documents': 
+         // 👇 Props Eklendi
+         return <Documents userRole={userRole} />;
     }
   };
 
@@ -188,46 +193,41 @@ export default function App() {
   // Giriş Ekranı
   if (!session) return <Login />;
 
-  return (
-    <div className="flex h-screen bg-gray-50" onClick={() => setShowNotifications(false)}> 
+return (
+    <div className="flex h-screen bg-gray-50">
+      
+      {/* 1. SOL MENÜ (SIDEBAR) */}
       <Sidebar 
         activeTab={activeTab} 
-        setActiveTab={(tab) => {
-           if(tab === 'logout') handleLogout(); 
-           else { setActiveTab(tab); setSelectedEmployee(null); }
+        onNavigate={(tab) => {
+           // Sidebar'dan gelen navigasyon isteği
+           setActiveTab(tab); 
+           setSelectedEmployee(null); 
         }} 
-        sidebarOpen={sidebarOpen}
-        userRole={userRole} 
+        onLogout={handleLogout}
+        currentUser={currentUser}
+        userRole={userRole}
       />
       
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* HEADER */}
-        <div className="bg-white shadow-sm px-6 py-4 flex items-center justify-between sticky top-0 z-20">
-            <h2 className="text-xl font-bold text-gray-800 capitalize">{activeTab.replace('-', ' ')}</h2>
-            
-            <div className="flex items-center gap-4">
-              <div className="relative" onClick={(e) => e.stopPropagation()}>
-                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 rounded-full hover:bg-gray-100 relative text-gray-600">
-                  <Bell className="w-6 h-6" />
-                  {filteredNotifications.some(n => !n.isRead) && <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full"></span>}
-                </button>
-                {showNotifications && <NotificationMenu notifications={filteredNotifications} onClose={() => setShowNotifications(false)} />}
-              </div>
-
-              <div className="text-right hidden md:block">
-                <p className="text-sm font-bold text-gray-800">{currentUser?.name}</p>
-                <p className="text-xs text-gray-500 uppercase">{userRole.replace('_', ' ')}</p>
-              </div>
-              
-              <button onClick={handleLogout} className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-white font-bold overflow-hidden border-2 border-white shadow-sm hover:opacity-80 transition-opacity">
-                {getHeaderAvatar()}
-              </button>
-            </div>
-        </div>
+      {/* 2. SAĞ TARAF (ANA İÇERİK) */}
+      <div className="flex-1 flex flex-col overflow-hidden ml-64"> 
+        {/* ml-64: Sidebar sabit olduğu için içerik sağa kaymalı */}
         
+        {/* A) YENİ HEADER BİLEŞENİ (Dropdown ve Ayarlar burada) */}
+    <Header 
+    sidebarOpen={true} 
+    setSidebarOpen={() => {}} 
+    currentUser={currentUser}  // 👈 Bu gitmezse isim yazmaz
+    userRole={userRole}
+    onNavigate={setActiveTab}  // 👈 Bu gitmezse ayarlar açılmaz
+    onLogout={handleLogout}    // 👈 Bu gitmezse çıkış yapılmaz
+/>
+        
+        {/* B) SAYFA İÇERİĞİ */}
         <main className="flex-1 overflow-auto p-6">
           {renderContent()}
         </main>
+
       </div>
     </div>
   );

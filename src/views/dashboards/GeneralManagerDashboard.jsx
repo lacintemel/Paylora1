@@ -1,277 +1,218 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../supabase'; // 👈 Supabase Bağlantısı
+import { supabase } from '../../supabase'; 
 import { 
-  Users, 
-  DollarSign, 
-  TrendingUp, 
-  Activity, 
-  ArrowUpRight, 
-  ArrowDownRight,
-  Building2 
+  TrendingUp, Users, DollarSign, Activity, Briefcase, 
+  ArrowUpRight, ArrowDownRight, CreditCard, PieChart
 } from 'lucide-react';
 
 export default function GeneralManagerDashboard({ onNavigate }) {
-  
-  // --- STATE YÖNETİMİ ---
-  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalEmployees: 0,
-    totalAnnualPayroll: 0,
-    monthlyPayroll: 0,
-    avgPerformance: "0.0",
-    departments: {}, // { Engineering: 5, HR: 2 ... }
-    recentPayrolls: [] // Son maaş ödemeleri
+    monthlyCost: 0,
+    pendingPayroll: 0,
+    avgSalary: 0
   });
+  const [loading, setLoading] = useState(true);
 
-  // --- VERİ ÇEKME VE HESAPLAMA ---
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {
-    setLoading(true);
     try {
-      // 1. ÇALIŞANLARI ÇEK (Maaş, Departman, Status)
-      const { data: employees, error: empError } = await supabase
+      setLoading(true);
+      const currentPeriod = new Date().toISOString().slice(0, 7); // "2026-01"
+
+      // 1. Çalışan İstatistikleri
+      const { data: emps, error: empError } = await supabase
         .from('employees')
-        .select('*');
-        
+        .select('salary');
+      
       if (empError) throw empError;
 
-      // 2. MAAŞ GEÇMİŞİNİ ÇEK (Son 5 ödeme)
+      const totalEmps = emps.length;
+      // Ortalama maaş hesabı
+      const avgSal = totalEmps > 0 
+        ? emps.reduce((sum, e) => sum + Number(e.salary), 0) / totalEmps 
+        : 0;
+
+      // 2. Bu Ayın Finansalları (Payroll Tablosundan)
       const { data: payrolls, error: payError } = await supabase
         .from('payrolls')
-        .select('*')
-        .order('id', { ascending: false })
-        .limit(5);
+        .select('net_pay, status')
+        .eq('period', currentPeriod);
 
       if (payError) throw payError;
 
-      // --- HESAPLAMALAR ---
-      
-      // A. Toplam Çalışan (Sadece Aktifleri saymak istersen .filter ekle)
-      const totalEmp = employees.length;
+      // Toplam Maliyet ve Bekleyen Ödemeler
+      const totalCost = payrolls?.reduce((sum, p) => sum + Number(p.net_pay), 0) || 0;
+      const pendingCount = payrolls?.filter(p => p.status === 'Pending').length || 0;
 
-      // B. Finansal Hesaplar (Yıllık Maaş Yükü)
-      const annualPayroll = employees.reduce((acc, curr) => acc + (Number(curr.salary) || 0), 0);
-      const monthlyPay = annualPayroll / 12;
-
-      // C. Departman Dağılımı
-      const deptCounts = {};
-      employees.forEach(emp => {
-        const dept = emp.department || 'Diğer';
-        deptCounts[dept] = (deptCounts[dept] || 0) + 1;
-      });
-
-      // D. Performans (DB'de sütun olmadığı için simüle ediyoruz veya ortalama alıyoruz)
-      // Şimdilik DB'de 'performance' sütunu yoksa statik veya random bir mantık:
-      // Gerçekte: const avgPerf = employees.reduce...
-      const avgPerf = (4.0 + (Math.random() * 1)).toFixed(1); // 4.0 - 5.0 arası simülasyon
-
-      // STATE GÜNCELLE
       setStats({
-        totalEmployees: totalEmp,
-        totalAnnualPayroll: annualPayroll,
-        monthlyPayroll: monthlyPay,
-        avgPerformance: avgPerf,
-        departments: deptCounts,
-        recentPayrolls: payrolls || []
+        totalEmployees: totalEmps,
+        monthlyCost: totalCost,
+        pendingPayroll: pendingCount,
+        avgSalary: Math.floor(avgSal)
       });
 
     } catch (error) {
-      console.error("Dashboard veri hatası:", error);
+      console.error("Dashboard Veri Hatası:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Veri yüklenirken gösterilecek iskelet veya basit loading
-  if (loading) {
-    return <div className="p-10 text-center text-gray-500">Veriler analiz ediliyor...</div>;
-  }
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
-      {/* --- ÜST KISIM --- */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* BAŞLIK */}
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Şirket Genel Bakış</h1>
-          <p className="text-gray-500">Finansal durum ve personel istatistiklerinin özeti.</p>
+          <h1 className="text-2xl font-bold text-gray-800">Genel Bakış</h1>
+          <p className="text-gray-500">Şirket finansalları ve personel durumu.</p>
         </div>
-        <div className="flex gap-2">
-           <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold border border-green-200 flex items-center gap-1">
-             <Activity className="w-3 h-3" /> Sistem Durumu: Normal
-           </span>
+        <div className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold">
+           {new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })} Dönemi
         </div>
       </div>
 
-      {/* --- KPI KARTLARI --- */}
+      {/* KPI KARTLARI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         
-        {/* Kart 1: Toplam Çalışan */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Toplam Personel</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-2">{stats.totalEmployees}</h3>
-            </div>
-            <div className="p-3 bg-blue-50 rounded-lg text-blue-600">
-              <Users className="w-6 h-6" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm text-green-600 bg-green-50 w-fit px-2 py-1 rounded">
-            <ArrowUpRight className="w-4 h-4 mr-1" />
-            <span>Geçen aydan %5 artış</span>
-          </div>
+        {/* Toplam Maaş Gideri */}
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between h-32">
+           <div className="flex justify-between items-start">
+              <div>
+                 <p className="text-sm font-bold text-gray-500">Aylık Maaş Gideri</p>
+                 <h3 className="text-2xl font-bold text-gray-800 mt-1">
+                    ${loading ? '...' : stats.monthlyCost.toLocaleString()}
+                 </h3>
+              </div>
+              <div className="p-2 bg-green-50 rounded-lg text-green-600">
+                 <DollarSign className="w-5 h-5" />
+              </div>
+           </div>
+           {stats.pendingPayroll > 0 && (
+             <p className="text-xs font-bold text-orange-500 flex items-center gap-1">
+                <Activity className="w-3 h-3"/> {stats.pendingPayroll} ödeme bekliyor
+             </p>
+           )}
         </div>
 
-        {/* Kart 2: Aylık Maaş Gideri */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Aylık Maaş Yükü</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-2">
-                ${stats.monthlyPayroll.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </h3>
-            </div>
-            <div className="p-3 bg-green-50 rounded-lg text-green-600">
-              <DollarSign className="w-6 h-6" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm text-gray-500">
-            <span>Yıllık: ${stats.totalAnnualPayroll.toLocaleString()}</span>
-          </div>
+        {/* Toplam Çalışan */}
+        <div onClick={() => onNavigate('employees')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between h-32 cursor-pointer hover:border-blue-200 transition-colors">
+           <div className="flex justify-between items-start">
+              <div>
+                 <p className="text-sm font-bold text-gray-500">Toplam Personel</p>
+                 <h3 className="text-2xl font-bold text-gray-800 mt-1">
+                    {loading ? '...' : stats.totalEmployees}
+                 </h3>
+              </div>
+              <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                 <Users className="w-5 h-5" />
+              </div>
+           </div>
+           <p className="text-xs text-green-600 flex items-center gap-1">
+              <ArrowUpRight className="w-3 h-3"/> Geçen aya göre stabil
+           </p>
         </div>
 
-        {/* Kart 3: Ortalama Performans */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Ort. Performans</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-2">{stats.avgPerformance} <span className="text-lg text-gray-400">/ 5.0</span></h3>
-            </div>
-            <div className="p-3 bg-yellow-50 rounded-lg text-yellow-600">
-              <Activity className="w-6 h-6" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm text-green-600">
-            <span>Hedefin üzerinde</span>
-          </div>
+        {/* Ortalama Maaş */}
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between h-32">
+           <div className="flex justify-between items-start">
+              <div>
+                 <p className="text-sm font-bold text-gray-500">Ort. Yıllık Maaş</p>
+                 <h3 className="text-2xl font-bold text-gray-800 mt-1">
+                    ${loading ? '...' : stats.avgSalary.toLocaleString()}
+                 </h3>
+              </div>
+              <div className="p-2 bg-purple-50 rounded-lg text-purple-600">
+                 <Briefcase className="w-5 h-5" />
+              </div>
+           </div>
+           <p className="text-xs text-gray-400">Sektör ortalamasında</p>
         </div>
 
-        {/* Kart 4: Aktif Proje/Departman */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Aktif Departman</p>
-              <h3 className="text-3xl font-bold text-gray-800 mt-2">{Object.keys(stats.departments).length}</h3>
-            </div>
-            <div className="p-3 bg-purple-50 rounded-lg text-purple-600">
-              <Building2 className="w-6 h-6" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm text-gray-500">
-            <span>Operasyonel verimlilik %98</span>
-          </div>
+        {/* Net Nakit Akışı (Mock) */}
+        <div className="bg-gradient-to-br from-gray-900 to-gray-800 text-white p-6 rounded-xl shadow-lg flex flex-col justify-between h-32">
+           <div className="flex justify-between items-start">
+              <div>
+                 <p className="text-sm font-bold text-gray-400">Tahmini Ciro</p>
+                 <h3 className="text-2xl font-bold mt-1">$450,000</h3>
+              </div>
+              <div className="p-2 bg-white/10 rounded-lg text-white">
+                 <TrendingUp className="w-5 h-5" />
+              </div>
+           </div>
+           <p className="text-xs text-green-400 flex items-center gap-1">
+              <ArrowUpRight className="w-3 h-3"/> Hedefin %12 üzerinde
+           </p>
         </div>
       </div>
 
-      {/* --- DETAYLI ANALİZLER --- */}
+      {/* ALT BÖLÜM: HIZLI AKSİYONLAR */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* SOL: Departman Dağılımı */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-gray-800">Departman Dağılımı</h3>
-            <button 
-              onClick={() => onNavigate('employees')} 
-              className="text-sm text-blue-600 hover:underline font-medium"
-            >
-              Detaylı Rapor
-            </button>
-          </div>
-          
-          <div className="space-y-5">
-            {Object.entries(stats.departments).map(([deptName, count]) => {
-              const percentage = Math.round((count / stats.totalEmployees) * 100);
-              return (
-                <div key={deptName}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium text-gray-700">{deptName}</span>
-                    <span className="text-gray-500">{count} Kişi ({percentage}%)</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2.5">
-                    <div 
-                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-1000" 
-                      style={{ width: `${percentage}%` }}
-                    ></div>
-                  </div>
+          {/* Maaş Onay Kutusu */}
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+             <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-blue-600"/> Finansal Aksiyonlar
+             </h3>
+             
+             {stats.pendingPayroll > 0 ? (
+                <div className="bg-orange-50 border border-orange-100 p-4 rounded-xl flex items-center justify-between">
+                   <div>
+                      <h4 className="font-bold text-orange-800">Maaş Ödemeleri Bekliyor</h4>
+                      <p className="text-sm text-orange-600 mt-1">{stats.pendingPayroll} personelin ödemesi onay bekliyor.</p>
+                   </div>
+                   <button 
+                     onClick={() => onNavigate('payroll')}
+                     className="bg-white text-orange-600 px-4 py-2 rounded-lg text-sm font-bold border border-orange-200 hover:bg-orange-100 transition-colors"
+                   >
+                     İncele & Öde
+                   </button>
                 </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* SAĞ: Son Finansal Hareketler (Payroll) */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-gray-800">Son Maaş Ödemeleri</h3>
-            <button 
-              onClick={() => onNavigate('payroll')} 
-              className="text-sm text-blue-600 hover:underline font-medium"
-            >
-              Tümünü Gör
-            </button>
+             ) : (
+                <div className="bg-green-50 border border-green-100 p-4 rounded-xl flex items-center gap-3">
+                   <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600">
+                      <TrendingUp className="w-5 h-5"/>
+                   </div>
+                   <div>
+                      <h4 className="font-bold text-green-800">Her Şey Yolunda</h4>
+                      <p className="text-sm text-green-600">Tüm ödemeler tamamlandı.</p>
+                   </div>
+                </div>
+             )}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b border-gray-100">
-                  <th className="py-2 font-medium">PERSONEL</th>
-                  <th className="py-2 font-medium">DÖNEM</th>
-                  <th className="py-2 font-medium text-right">NET TUTAR</th>
-                  <th className="py-2 font-medium text-right">DURUM</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm">
-                {stats.recentPayrolls.length > 0 ? (
-                  stats.recentPayrolls.map((pay) => (
-                    // Not: Gerçek sistemde JOIN ile name çekilir ama burada basit tutmak için ID gösteriyoruz veya statik kalıyor
-                    <tr key={pay.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                      <td className="py-3 flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                            EMP
-                         </div>
-                         <span className="font-medium text-gray-700">Personel #{pay.employee_id}</span>
-                      </td>
-                      <td className="py-3 text-gray-500">{pay.period}</td>
-                      <td className="py-3 text-right font-medium text-gray-800">
-                        ${Number(pay.net_salary).toLocaleString()}
-                      </td>
-                      <td className="py-3 text-right">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          pay.status === 'Paid' ? 'bg-green-100 text-green-700' : 
-                          pay.status === 'Processing' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100'
-                        }`}>
-                          {pay.status === 'Paid' ? 'Ödendi' : 'İşleniyor'}
-                        </span>
-                      </td>
-                    </tr>
-                   ))
-                ) : (
-                  <tr>
-                    <td colSpan="4" className="py-4 text-center text-gray-500 italic">
-                       Henüz maaş verisi bulunmuyor.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          {/* Departman Dağılımı (Statik Görsel) */}
+          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+             <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <PieChart className="w-5 h-5 text-purple-600"/> Departman Dağılımı
+             </h3>
+             <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                   <span className="text-sm font-medium text-gray-600">Engineering</span>
+                   <div className="w-2/3 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500 w-[60%]"></div>
+                   </div>
+                   <span className="text-xs font-bold text-gray-500">60%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                   <span className="text-sm font-medium text-gray-600">Sales</span>
+                   <div className="w-2/3 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 w-[25%]"></div>
+                   </div>
+                   <span className="text-xs font-bold text-gray-500">25%</span>
+                </div>
+                <div className="flex items-center justify-between">
+                   <span className="text-sm font-medium text-gray-600">HR & Admin</span>
+                   <div className="w-2/3 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-orange-500 w-[15%]"></div>
+                   </div>
+                   <span className="text-xs font-bold text-gray-500">15%</span>
+                </div>
+             </div>
           </div>
-        </div>
-
       </div>
     </div>
   );

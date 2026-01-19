@@ -1,71 +1,73 @@
 import React from 'react';
-import { navItems } from '../../config/navConfig';
-import { LogOut } from 'lucide-react'; // İkonu ekledik
+import { 
+  LayoutDashboard, Users, Clock, Calendar, 
+  FileText, Briefcase, File, Building2, LogOut, Settings
+} from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, sidebarOpen, userRole }) {
-  // Kullanıcının rolüne göre menü öğelerini filtrele
-  const filteredNavItems = navItems.filter(item => 
-    item.allowedRoles.includes(userRole)
-  );
+export default function Sidebar({ activeTab, onNavigate, onLogout }) {
+  
+  const menuItems = [
+    { id: 'dashboard', label: 'Panel', icon: LayoutDashboard },
+    { id: 'employees', label: 'Çalışanlar', icon: Users },
+    { id: 'time-tracking', label: 'Zaman Takibi', icon: Clock },
+    { id: 'leave', label: 'İzinler', icon: Calendar },
+    { id: 'payroll', label: 'Bordro', icon: FileText },
+    { id: 'recruitment', label: 'İşe Alım', icon: Briefcase },
+    { id: 'documents', label: 'Dokümanlar', icon: File },
+    // Ayarları menüde de görmek istersen burayı açabilirsin:
+    // { id: 'settings', label: 'Ayarlar', icon: Settings }, 
+  ];
 
   return (
-    <aside 
-      className={`bg-gray-900 text-white transition-all duration-300 flex flex-col ${
-        sidebarOpen ? "w-64" : "w-20"
-      }`}
-    >
-      {/* LOGO ALANI */}
-      <div className="h-16 flex items-center justify-center border-b border-gray-800">
-        <h1 className={`font-bold text-xl tracking-wider transition-all ${!sidebarOpen && "hidden"}`}>
-          PAYLORA
-        </h1>
-        {!sidebarOpen && <span className="font-bold text-xl">P</span>}
+    <div className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col fixed left-0 top-0 z-50">
+      
+      {/* --- LOGO ALANI --- */}
+      <div className="h-20 flex items-center gap-3 px-6 border-b border-gray-100">
+        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+          <Building2 className="w-6 h-6" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-gray-800 tracking-tight">Paylora</h1>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">HR SYSTEM</p>
+        </div>
       </div>
 
-      {/* MENÜ LİSTESİ */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-2">
-        {filteredNavItems.map((item) => {
+      {/* --- MENÜLER --- */}
+      <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto custom-scrollbar">
+        {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-
+          
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 w-full text-left group
+              onClick={() => onNavigate(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 relative group
                 ${isActive 
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-900/50" 
-                  : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                  ? 'bg-blue-50 text-blue-700 font-bold shadow-sm' 
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 font-medium'
                 }
               `}
             >
-              <Icon className={`w-5 h-5 ${isActive ? "text-white" : "text-gray-400 group-hover:text-white"}`} />
-              <span className={`font-medium whitespace-nowrap ${!sidebarOpen && "hidden"}`}>
-                {item.label}
-              </span>
+              {/* Aktif İndikatörü */}
+              {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-600 rounded-r-full"></div>}
               
-              {/* Aktif sekme için sağ tarafta küçük nokta işareti */}
-              {isActive && sidebarOpen && (
-                <div className="ml-auto w-2 h-2 bg-white rounded-full"></div>
-              )}
+              <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
+              <span className="text-sm">{item.label}</span>
             </button>
           );
         })}
       </nav>
 
-      {/* ALT KISIM: ÇIKIŞ YAP BUTONU */}
-      <div className="p-4 border-t border-gray-800 mt-auto">
+      {/* --- ALT KISIM (ÇIKIŞ) --- */}
+      <div className="p-4 border-t border-gray-100 bg-gray-50/30">
         <button 
-          onClick={() => setActiveTab('logout')} // 'logout' sinyalini gönder
-          className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 w-full text-red-400 hover:bg-red-500/10 hover:text-red-300`}
+          onClick={onLogout}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 transition-colors"
         >
-          <LogOut className="w-5 h-5" />
-          <span className={`font-medium whitespace-nowrap ${!sidebarOpen && "hidden"}`}>
-            Çıkış Yap
-          </span>
+          <LogOut className="w-4 h-4" /> Çıkış Yap
         </button>
       </div>
-
-    </aside>
+    </div>
   );
 }
