@@ -1,74 +1,83 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../supabase'; // Yolun doğru olduğundan emin ol
+import { supabase } from '../../supabase';
 import { 
   Bell, Settings, LogOut, User, ChevronDown, 
-  PanelLeftClose, PanelLeftOpen, Check, Trash2 
+  PanelLeftClose, PanelLeftOpen, Trash2 
 } from 'lucide-react';
 
 export default function Header({ sidebarOpen, setSidebarOpen, currentUser, userRole, onNavigate, onLogout }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   
-  // --- BİLDİRİM STATE'LERİ ---
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
 
-  // --- 1. BAŞLANGIÇ VE CANLI TAKİP ---
+  // currentUser değiştiğinde veya sayfa açıldığında bildirimleri çek
   useEffect(() => {
-    fetchNotifications();
-
-    // CANLI DİNLEME (Real-time)
-    const subscription = supabase
-      .channel('public:notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
-        // Yeni bildirim geldiğinde listeye ekle ve sesi çal (opsiyonel)
-        const newNotif = payload.new;
-        setNotifications(prev => [newNotif, ...prev]);
-        setUnreadCount(prev => prev + 1);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, []);
+    if (currentUser?.id) {
+        fetchNotifications();
+        subscribeToNotifications();
+    }
+  }, [currentUser]);
 
   const fetchNotifications = async () => {
     try {
+      // 🔒 SADECE 'currentUser.id' ye ait olanları çekiyoruz
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
+        .eq('employee_id', currentUser.id) // <--- KRİTİK DEĞİŞİKLİK
         .order('created_at', { ascending: false })
-        .limit(20); // Son 20 bildirim
+        .limit(20);
 
       if (error) throw error;
       
       setNotifications(data || []);
-      // Okunmamışları say
-      const unread = data?.filter(n => !n.is_read).length || 0;
-      setUnreadCount(unread);
+      setUnreadCount(data?.filter(n => !n.is_read).length || 0);
     } catch (error) {
       console.error("Bildirim hatası:", error);
     }
   };
 
-  // --- 2. OKUNDU İŞARETLEME ---
+  const subscribeToNotifications = () => {
+    const subscription = supabase
+      .channel('public:notifications')
+      .on('postgres_changes', 
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'notifications',
+          filter: `employee_id=eq.${currentUser.id}` // Sadece bana gelenleri dinle
+        }, 
+        (payload) => {
+          setNotifications(prev => [payload.new, ...prev]);
+          setUnreadCount(prev => prev + 1);
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(subscription);
+  };
+
   const markAsRead = async (id) => {
-    // Önce arayüzde güncelle (Hız için)
+    // Sadece bu kullanıcının bu bildirimini güncelle
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
-
-    // Sonra veritabanına yaz
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
   };
 
   const markAllAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     setUnreadCount(0);
-    await supabase.from('notifications').update({ is_read: true }).neq('is_read', true);
+    // Sadece kendi bildirimlerimi güncelle
+    await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('employee_id', currentUser.id)
+        .neq('is_read', true);
   };
 
   const deleteNotification = async (id, e) => {
@@ -77,7 +86,14 @@ export default function Header({ sidebarOpen, setSidebarOpen, currentUser, userR
     await supabase.from('notifications').delete().eq('id', id);
   };
 
-  // Dışarı tıklama kontrolü
+  // --- UI ---
+  // (Render kısmı öncekiyle aynı, sadece avatar kontrolü)
+  const renderAvatar = () => {
+    if (currentUser?.avatar) return <img src={currentUser.avatar} alt="Profile" className="w-full h-full object-cover" />;
+    return <span className="text-lg font-bold">{currentUser?.name?.charAt(0) || 'U'}</span>;
+  };
+
+  // Click Outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsDropdownOpen(false);
@@ -87,15 +103,10 @@ export default function Header({ sidebarOpen, setSidebarOpen, currentUser, userR
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const renderAvatar = () => {
-    if (currentUser?.avatar) return <img src={currentUser.avatar} alt="Profile" className="w-full h-full object-cover" />;
-    return <span className="text-lg font-bold">{currentUser?.name?.charAt(0) || 'U'}</span>;
-  };
-
   return (
     <div className="bg-white shadow-sm px-6 py-4 flex items-center justify-between sticky top-0 z-30 h-20 transition-all duration-300">
       
-      {/* SOL: Sidebar Toggle */}
+      {/* SOL */}
       <div className="flex items-center gap-4">
         <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-gray-500 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors">
           {sidebarOpen ? <PanelLeftClose className="w-6 h-6" /> : <PanelLeftOpen className="w-6 h-6" />}
@@ -106,10 +117,10 @@ export default function Header({ sidebarOpen, setSidebarOpen, currentUser, userR
         </div>
       </div>
       
-      {/* SAĞ: Bildirim & Profil */}
+      {/* SAĞ */}
       <div className="flex items-center gap-4 md:gap-6">
         
-        {/* --- 🔔 BİLDİRİM KUTUSU (GERÇEK VERİ) --- */}
+        {/* BİLDİRİM */}
         <div className="relative" ref={notifRef}>
             <button 
                 onClick={() => setIsNotifOpen(!isNotifOpen)}
@@ -140,9 +151,8 @@ export default function Header({ sidebarOpen, setSidebarOpen, currentUser, userR
                                  onClick={() => {
                                     markAsRead(notif.id);
                                     if(notif.link) {
-                                       // Eğer link '/leave' ise sayfa yönlendirmesi yap
-                                       // onNavigate prop'u ile:
                                        if(notif.link === '/leave') onNavigate('leave');
+                                       if(notif.link === '/payroll') onNavigate('payroll');
                                        setIsNotifOpen(false);
                                     }
                                  }}
@@ -167,15 +177,11 @@ export default function Header({ sidebarOpen, setSidebarOpen, currentUser, userR
                            ))
                         )}
                     </div>
-                    
-                    <div className="p-2 border-t border-gray-50 text-center bg-gray-50/30">
-                        <button className="text-xs font-bold text-gray-500 hover:text-blue-600 w-full py-2">Bildirim Ayarları</button>
-                    </div>
                 </div>
             )}
         </div>
 
-        {/* --- PROFİL MENÜSÜ --- */}
+        {/* PROFİL */}
         <div className="relative" ref={dropdownRef}>
             <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center gap-3 hover:bg-gray-50 p-1.5 rounded-xl transition-all border border-transparent hover:border-gray-200 group">
                 <div className="text-right hidden md:block">
@@ -210,7 +216,6 @@ export default function Header({ sidebarOpen, setSidebarOpen, currentUser, userR
                 </div>
             )}
         </div>
-
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import Login from './views/Login';
 
+
 // --- DASHBOARDLAR ---
 import GeneralManagerDashboard from './views/dashboards/GeneralManagerDashboard';
 import HRDashboard from './views/dashboards/HRDashboard';
@@ -20,6 +21,7 @@ import Settings from './views/Settings';
 import Documents from './views/Documents';
 import TimeTracking from './views/TimeTracking'; 
 import LeaveManagement from './views/LeaveManagement';
+import Planner from './views/Planner';
 
 export default function App() {
   // --- STATE YÖNETİMİ ---
@@ -148,6 +150,8 @@ const fetchCompanySettings = async () => {
       case 'time-tracking': return <TimeTracking currentUserId={currentUser?.id} userRole={userRole} />;
       case 'leave': return <LeaveManagement currentUserId={currentUser?.id} userRole={userRole} />;
       case 'payroll': return <Payroll currentUserId={currentUser?.id} userRole={userRole} />;
+      case 'planner': 
+   return <Planner userRole={userRole} currentUserId={currentUser?.id} />;
       
       // 🔒 GÜVENLİK KONTROLÜ 1: İşe Alım
       case 'recruitment': 

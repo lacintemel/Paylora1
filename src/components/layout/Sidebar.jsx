@@ -16,6 +16,7 @@ export default function Sidebar({ activeTab, onNavigate, onLogout, isOpen, compa
     { id: 'payroll', label: 'Bordro', icon: FileText },
     { id: 'recruitment', label: 'İşe Alım', icon: Briefcase, roles: ['general_manager', 'hr'] }, // Sadece bu rollere özel
     { id: 'documents', label: 'Dokümanlar', icon: File },
+    { id: 'planner', label: 'Ajanda & Takvim', icon: Calendar },
   ];
 
   // Rol kontrolü yaparak menüyü filtrele
