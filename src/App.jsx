@@ -22,7 +22,7 @@ import Documents from './views/Documents';
 import TimeTracking from './views/TimeTracking'; 
 import LeaveManagement from './views/LeaveManagement';
 import Planner from './views/Planner';
-
+import Performance from './views/Performance';
 export default function App() {
   // --- STATE YÖNETİMİ ---
   const [session, setSession] = useState(null);
@@ -151,7 +151,9 @@ const fetchCompanySettings = async () => {
       case 'leave': return <LeaveManagement currentUserId={currentUser?.id} userRole={userRole} />;
       case 'payroll': return <Payroll currentUserId={currentUser?.id} userRole={userRole} />;
       case 'planner': 
-   return <Planner userRole={userRole} currentUserId={currentUser?.id} />;
+      return <Planner userRole={userRole} currentUserId={currentUser?.id} />;
+      case 'performance':
+      return <Performance userRole={userRole} currentUserId={currentUser?.id} />;
       
       // 🔒 GÜVENLİK KONTROLÜ 1: İşe Alım
       case 'recruitment': 

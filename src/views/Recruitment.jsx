@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase'; 
 import { 
-  Plus, Search, MoreHorizontal, Mail, Phone, Calendar, 
-  MessageSquare, X, Check, GripVertical, User
+  Plus, MoreHorizontal, Mail, Phone, Calendar, 
+  X, CheckCircle, DollarSign, Briefcase, UserPlus 
 } from 'lucide-react';
 
-// KANBAN SÜTUNLARI (Veritabanındaki 'stage' ile eşleşmeli)
 const STAGES = [
-  { id: 'Applied', label: 'Başvurdu', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { id: 'Applied', label: 'Başvuru', color: 'bg-blue-50 text-blue-700 border-blue-200' },
   { id: 'Screening', label: 'İnceleniyor', color: 'bg-purple-50 text-purple-700 border-purple-200' },
   { id: 'Interview', label: 'Görüşülüyor', color: 'bg-orange-50 text-orange-700 border-orange-200' },
   { id: 'Offer', label: 'Teklif', color: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
@@ -21,32 +20,81 @@ export default function Recruitment() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draggedCandidate, setDraggedCandidate] = useState(null);
 
-  // Form
-  const [formData, setFormData] = useState({ name: '', position: '', email: '', phone: '' });
+  // Form (Departman Eklendi)
+  const [formData, setFormData] = useState({ 
+    name: '', position: '', email: '', phone: '', department: 'Engineering' 
+  });
 
-  // --- 1. VERİ ÇEKME ---
-  useEffect(() => {
-    fetchCandidates();
-  }, []);
+  useEffect(() => { fetchCandidates(); }, []);
 
   const fetchCandidates = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('candidates')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) console.error(error);
-    else setCandidates(data || []);
+    const { data, error } = await supabase.from('candidates').select('*').order('created_at', { ascending: false });
+    if (!error) setCandidates(data || []);
     setLoading(false);
   };
 
-  // --- 2. SÜRÜKLE & BIRAK MANTIĞI (HTML5 API) ---
-  
+  // --- TÜRKÇE KARAKTER TEMİZLEYİCİ (Email/Şifre İçin) ---
+  const normalizeTr = (text) => {
+    return text
+      .replace(/Ğ/g, 'G').replace(/Ü/g, 'U').replace(/Ş/g, 'S').replace(/İ/g, 'I').replace(/Ö/g, 'O').replace(/Ç/g, 'C')
+      .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
+      .toLowerCase().replace(/\s/g, '');
+  };
+
+  // --- 🔥 OTOMATİK İŞE ALIM FONKSİYONU ---
+  const hireCandidate = async (candidate) => {
+    if (!window.confirm(`${candidate.name} isimli adayı işe almak ve personel kaydını oluşturmak istiyor musunuz?`)) {
+        fetchCandidates(); // İptal ederse listeyi eski haline getir
+        return;
+    }
+
+    try {
+        // 1. İsim Ayrıştırma (İlk 2 harf + Soyisim)
+        const nameParts = candidate.name.trim().split(' ');
+        const firstName = nameParts[0]; 
+        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : 'personel';
+        
+        // Örn: Ahmet Yılmaz -> ahyilmaz
+        const prefix = normalizeTr(firstName.substring(0, 2) + lastName);
+        
+        const companyEmail = `${prefix}@paylora.com`;
+        const tempPassword = `${prefix}123`; 
+
+        // 2. Employees Tablosuna Ekle
+        const { error: empError } = await supabase.from('employees').insert({
+            name: candidate.name,
+            email: companyEmail,      // Şirket Maili
+            personal_email: candidate.email, // Kendi Maili
+            phone: candidate.phone,
+            department: candidate.department || 'Engineering', // Eğer boşsa varsayılan
+            position: candidate.position,
+            salary: candidate.offer_salary || 0, // Teklif edilen maaş
+            status: 'Active',
+            avatar: firstName.substring(0,2).toUpperCase(),
+            start_date: new Date().toISOString().split('T')[0],
+            is_first_login: true,     // 👈 İLK GİRİŞTE ŞİFRE DEĞİŞTİRME ZORUNLULUĞU
+            company_email: companyEmail
+        });
+
+        if (empError) throw empError;
+
+        // 3. Adayın Statüsünü 'Hired' Yap
+        await supabase.from('candidates').update({ stage: 'Hired' }).eq('id', candidate.id);
+
+        alert(`✅ PERSONEL OLUŞTURULDU!\n\nEmail: ${companyEmail}\nŞifre: ${tempPassword}\n\n(Maaş: $${candidate.offer_salary})`);
+        fetchCandidates();
+
+    } catch (error) {
+        alert("İşe alım hatası: " + error.message);
+        fetchCandidates();
+    }
+  };
+
+  // --- SÜRÜKLE & BIRAK MANTIĞI ---
   const handleDragStart = (e, candidate) => {
     setDraggedCandidate(candidate);
     e.dataTransfer.effectAllowed = "move";
-    // Hayalet görüntü için opsiyonel ayar
     e.target.style.opacity = '0.5';
   };
 
@@ -55,43 +103,55 @@ export default function Recruitment() {
     setDraggedCandidate(null);
   };
 
-  const handleDragOver = (e) => {
-    e.preventDefault(); // Bırakmaya izin ver
-  };
+  const handleDragOver = (e) => e.preventDefault();
 
   const handleDrop = async (e, targetStage) => {
     e.preventDefault();
     if (!draggedCandidate) return;
 
-    // 1. Önce Arayüzü Güncelle (Optimistic UI)
-    const updatedList = candidates.map(c => 
-       c.id === draggedCandidate.id ? { ...c, stage: targetStage } : c
-    );
+    // KENDİ SÜTUNUNA BIRAKIRSA İŞLEM YAPMA
+    if (draggedCandidate.stage === targetStage) return;
+
+    // --- SENARYO 1: TEKLİF AŞAMASI (MAAŞ GİRME) ---
+    if (targetStage === 'Offer') {
+        const input = prompt("Bu aday için teklif edilen NET maaş nedir?", "0");
+        if (input === null) return; // İptal
+        
+        const salary = parseInt(input);
+        
+        // Veritabanını Güncelle
+        await supabase.from('candidates').update({ stage: 'Offer', offer_salary: salary }).eq('id', draggedCandidate.id);
+        fetchCandidates(); // Listeyi yenile
+        return;
+    }
+
+    // --- SENARYO 2: İŞE ALIM AŞAMASI (PERSONEL OLUŞTURMA) ---
+    if (targetStage === 'Hired') {
+        // Otomasyon fonksiyonunu çağır
+        await hireCandidate(draggedCandidate);
+        return;
+    }
+
+    // --- SENARYO 3: NORMAL GÜNCELLEME ---
+    // Önce arayüzü güncelle (Hız için)
+    const updatedList = candidates.map(c => c.id === draggedCandidate.id ? { ...c, stage: targetStage } : c);
     setCandidates(updatedList);
 
-    // 2. Sonra Veritabanını Güncelle
-    const { error } = await supabase
-       .from('candidates')
-       .update({ stage: targetStage })
-       .eq('id', draggedCandidate.id);
-
+    // Sonra veritabanına yaz
+    const { error } = await supabase.from('candidates').update({ stage: targetStage }).eq('id', draggedCandidate.id);
     if (error) {
        alert("Güncelleme başarısız!");
-       fetchCandidates(); // Hata varsa geri al
+       fetchCandidates();
     }
   };
 
-  // --- 3. YENİ ADAY EKLEME ---
+  // --- YENİ ADAY EKLEME ---
   const handleAddCandidate = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('candidates').insert([{
-        ...formData,
-        stage: 'Applied' // Varsayılan sütun
-    }]);
-
+    const { error } = await supabase.from('candidates').insert([{ ...formData, stage: 'Applied' }]);
     if (!error) {
         setIsModalOpen(false);
-        setFormData({ name: '', position: '', email: '', phone: '' });
+        setFormData({ name: '', position: '', email: '', phone: '', department: 'Engineering' });
         fetchCandidates();
     } else {
         alert("Hata: " + error.message);
@@ -99,34 +159,28 @@ export default function Recruitment() {
   };
 
   return (
-    <div className="h-[calc(100vh-100px)] flex flex-col animate-in fade-in duration-500">
+    <div className="h-screen flex flex-col animate-in fade-in duration-500 pb-20">
       
       {/* HEADER */}
       <div className="flex justify-between items-center mb-6 px-1">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">İşe Alım Panosu</h1>
-          <p className="text-gray-500">Adayları sürükleyerek aşamalarını güncelleyin.</p>
+          <p className="text-gray-500">Adayları sürükleyerek işe alım sürecini yönetin.</p>
         </div>
-        <button 
-           onClick={() => setIsModalOpen(true)}
-           className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm"
-        >
-           <Plus className="w-4 h-4"/> Yeni Aday
+        <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm font-bold">
+           <UserPlus className="w-4 h-4"/> Yeni Aday
         </button>
       </div>
 
-      {/* KANBAN BOARD (Yatay Scroll) */}
-      <div className="flex-1 overflow-x-auto pb-4">
-         <div className="flex gap-6 min-w-max h-full">
-            
+      {/* KANBAN BOARD */}
+      <div className="flex-1 overflow-x-auto pb-4 custom-scrollbar">
+         <div className="flex gap-6 min-w-max h-full px-1">
             {STAGES.map(stage => {
-                // Bu sütundaki adayları filtrele
                 const stageCandidates = candidates.filter(c => c.stage === stage.id);
-
                 return (
                    <div 
                      key={stage.id} 
-                     className="w-80 flex flex-col bg-gray-50/50 rounded-xl border border-gray-200 h-full"
+                     className="w-80 flex flex-col bg-gray-50/50 rounded-xl border border-gray-200 h-full max-h-[calc(100vh-180px)]"
                      onDragOver={handleDragOver}
                      onDrop={(e) => handleDrop(e, stage.id)}
                    >
@@ -136,12 +190,10 @@ export default function Recruitment() {
                             <span className={`w-3 h-3 rounded-full ${stage.color.split(' ')[0].replace('bg-', 'bg-')}`}></span>
                             <h3 className="font-bold text-gray-700">{stage.label}</h3>
                          </div>
-                         <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold">
-                            {stageCandidates.length}
-                         </span>
+                         <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs font-bold">{stageCandidates.length}</span>
                       </div>
 
-                      {/* Kartlar Alanı */}
+                      {/* Kartlar */}
                       <div className="p-3 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
                          {stageCandidates.map(candidate => (
                             <div 
@@ -149,70 +201,68 @@ export default function Recruitment() {
                                draggable
                                onDragStart={(e) => handleDragStart(e, candidate)}
                                onDragEnd={handleDragEnd}
-                               className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative"
+                               className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group relative"
                             >
                                <div className="flex justify-between items-start mb-2">
-                                  <h4 className="font-bold text-gray-800">{candidate.name}</h4>
-                                  <button className="text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                                     <MoreHorizontal className="w-4 h-4" />
-                                  </button>
+                                  <div>
+                                    <h4 className="font-bold text-gray-800">{candidate.name}</h4>
+                                    <p className="text-sm text-blue-600 font-medium">{candidate.position}</p>
+                                  </div>
+                                  <div className="bg-gray-100 p-1 rounded">
+                                    <Briefcase className="w-3 h-3 text-gray-500"/>
+                                  </div>
                                </div>
-                               <p className="text-sm text-blue-600 font-medium mb-3">{candidate.position}</p>
                                
-                               <div className="space-y-1.5">
-                                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                                     <Mail className="w-3 h-3" /> {candidate.email}
-                                  </div>
-                                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                                     <Phone className="w-3 h-3" /> {candidate.phone || '-'}
-                                  </div>
+                               <div className="space-y-1.5 mt-3">
+                                  <div className="flex items-center gap-2 text-xs text-gray-500"><Mail className="w-3 h-3" /> {candidate.email}</div>
+                                  <div className="flex items-center gap-2 text-xs text-gray-500"><Phone className="w-3 h-3" /> {candidate.phone || '-'}</div>
+                                  
+                                  {/* Maaş Teklifi Varsa Göster */}
+                                  {candidate.offer_salary > 0 && (
+                                     <div className="flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded w-fit mt-1">
+                                        <DollarSign className="w-3 h-3"/> Teklif: ${candidate.offer_salary}
+                                     </div>
+                                  )}
+
                                   <div className="flex items-center gap-2 text-xs text-gray-400 pt-2 border-t border-gray-50 mt-2">
-                                     <Calendar className="w-3 h-3" /> 
-                                     {new Date(candidate.created_at).toLocaleDateString('tr-TR')}
+                                     <Calendar className="w-3 h-3" /> {new Date(candidate.created_at).toLocaleDateString('tr-TR')}
                                   </div>
                                </div>
                             </div>
                          ))}
-                         
                          {stageCandidates.length === 0 && (
-                            <div className="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg opacity-50">
-                               <p className="text-sm text-gray-400">Aday yok</p>
-                            </div>
+                            <div className="text-center py-10 border-2 border-dashed border-gray-200 rounded-lg opacity-50"><p className="text-sm text-gray-400">Aday yok</p></div>
                          )}
                       </div>
                    </div>
                 );
             })}
-
          </div>
       </div>
 
-      {/* MODAL (YENİ ADAY) */}
+      {/* MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
               <div className="flex justify-between items-center mb-6 border-b pb-4">
                  <h2 className="text-xl font-bold text-gray-800">Yeni Aday Ekle</h2>
                  <button onClick={() => setIsModalOpen(false)}><X className="w-6 h-6 text-gray-500"/></button>
               </div>
               <form onSubmit={handleAddCandidate} className="space-y-4">
+                 <div><label className="text-sm font-bold text-gray-700">Ad Soyad</label><input required className="w-full border p-2 rounded-lg mt-1" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                 <div><label className="text-sm font-bold text-gray-700">Pozisyon</label><input required className="w-full border p-2 rounded-lg mt-1" value={formData.position} onChange={e => setFormData({...formData, position: e.target.value})} /></div>
+                 
+                 {/* DEPARTMAN SEÇİMİ EKLENDİ */}
                  <div>
-                    <label className="text-sm font-bold text-gray-700">Ad Soyad</label>
-                    <input required className="w-full border p-2 rounded-lg mt-1" placeholder="Ad Soyad" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                    <label className="text-sm font-bold text-gray-700">Departman</label>
+                    <select className="w-full border p-2 rounded-lg mt-1 bg-white" value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})}>
+                        {['Engineering', 'HR', 'Sales', 'Marketing', 'Finance', 'Product'].map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
                  </div>
-                 <div>
-                    <label className="text-sm font-bold text-gray-700">Pozisyon</label>
-                    <input required className="w-full border p-2 rounded-lg mt-1" placeholder="Örn: Frontend Developer" value={formData.position} onChange={e => setFormData({...formData, position: e.target.value})} />
-                 </div>
+
                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="text-sm font-bold text-gray-700">Email</label>
-                        <input required type="email" className="w-full border p-2 rounded-lg mt-1" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-                    </div>
-                    <div>
-                        <label className="text-sm font-bold text-gray-700">Telefon</label>
-                        <input className="w-full border p-2 rounded-lg mt-1" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                    </div>
+                    <div><label className="text-sm font-bold text-gray-700">Email</label><input required type="email" className="w-full border p-2 rounded-lg mt-1" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
+                    <div><label className="text-sm font-bold text-gray-700">Telefon</label><input className="w-full border p-2 rounded-lg mt-1" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
                  </div>
                  <div className="flex justify-end gap-2 pt-4">
                     <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-lg font-bold text-gray-600">İptal</button>
