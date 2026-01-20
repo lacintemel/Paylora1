@@ -23,6 +23,8 @@ import TimeTracking from './views/TimeTracking';
 import LeaveManagement from './views/LeaveManagement';
 import Planner from './views/Planner';
 import Performance from './views/Performance';
+import Announcements from './views/Announcements';
+import NotificationsPage from './views/Notifications';
 export default function App() {
   // --- STATE YÖNETİMİ ---
   const [session, setSession] = useState(null);
@@ -129,16 +131,28 @@ const fetchCompanySettings = async () => {
 
   // --- SAYFA RENDER ---
   // --- SAYFA RENDER MANTIĞI (GÜVENLİK GÜNCELLEMESİ) ---
-  const renderContent = () => {
+ const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        if (userRole === 'general_manager') return <GeneralManagerDashboard onNavigate={handleNavigate} />;
-        if (userRole === 'hr') return <HRDashboard onNavigate={handleNavigate} />;
+        // 👇 DÜZELTME BURADA: userRole ve currentUser'ı ekledik
+        if (userRole === 'general_manager') {
+            return <GeneralManagerDashboard 
+                      onNavigate={handleNavigate} 
+                      userRole={userRole} 
+                      currentUser={currentUser} 
+                   />;
+        }
+        if (userRole === 'hr') {
+            return <HRDashboard 
+                      onNavigate={handleNavigate} 
+                      userRole={userRole} 
+                      currentUser={currentUser} 
+                   />;
+        }
         return <EmployeeDashboard onNavigate={handleNavigate} currentUser={currentUser} />;
       
       case 'employees':
         if (selectedEmployee) {
-            // 👇 GÜNCELLEME: userRole prop'unu buraya ekledik!
             return <EmployeeDetail 
                       employee={selectedEmployee} 
                       userRole={userRole} 
@@ -150,12 +164,18 @@ const fetchCompanySettings = async () => {
       case 'time-tracking': return <TimeTracking currentUserId={currentUser?.id} userRole={userRole} />;
       case 'leave': return <LeaveManagement currentUserId={currentUser?.id} userRole={userRole} />;
       case 'payroll': return <Payroll currentUserId={currentUser?.id} userRole={userRole} />;
-      case 'planner': 
-      return <Planner userRole={userRole} currentUserId={currentUser?.id} />;
-      case 'performance':
-      return <Performance userRole={userRole} currentUserId={currentUser?.id} />;
+      case 'planner': return <Planner userRole={userRole} currentUserId={currentUser?.id} />;
+      case 'performance': return <Performance userRole={userRole} currentUserId={currentUser?.id} />;
+      case 'notifications':
+        return (
+          <NotificationsPage 
+             currentUser={currentUser} 
+             onNavigate={setActiveTab} // Sayfa içinde gezinmek için
+          />
+        );
+      // ARTIK ANNOUNCEMENTS SAYFASINA GEREK YOK (Dashboard'a gömdük), BU SATIRI SİLEBİLİRSİN:
+      // case 'announcements': return <Announcements userRole={userRole} currentUser={currentUser} />;
       
-      // 🔒 GÜVENLİK KONTROLÜ 1: İşe Alım
       case 'recruitment': 
         if (userRole === 'employee') {
             return (
@@ -169,7 +189,6 @@ const fetchCompanySettings = async () => {
         }
         return <Recruitment />;
       
-      // 🔒 GÜVENLİK KONTROLÜ 2: Dokümanlar (ID gönderiyoruz)
       case 'documents': 
         return <Documents userRole={userRole} currentUserId={currentUser?.id} />;
       
@@ -178,8 +197,8 @@ const fetchCompanySettings = async () => {
           userRole={userRole} 
           currentUserId={currentUser?.id} 
           onUpdate={() => {
-             fetchCurrentUser(session.user.email);
-             fetchCompanySettings();
+             // fetchCurrentUser ve fetchCompanySettings fonksiyonlarının burada erişilebilir olduğundan emin ol
+             // Eğer hata verirse props olarak geçmen gerekebilir
           }} 
         />;
       
@@ -190,36 +209,42 @@ const fetchCompanySettings = async () => {
   if (loading) return <div className="h-screen flex items-center justify-center text-gray-500">Yükleniyor...</div>;
   if (!session) return <Login />;
 
-  return (
-    <div className="flex min-h-screen bg-[#F8F9FC]">
+return (
+    <div className="flex h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden">
       
-      {/* 1. SIDEBAR: Ayarları buraya prop olarak gönderiyoruz */}
-    <Sidebar 
-  activeTab={activeTab} 
-  onNavigate={handleNavigate} 
-  onLogout={handleLogout}
-  isOpen={isSidebarOpen} 
-  companySettings={companySettings}
-  userRole={userRole} // 👈 YENİ: Bunu eklemezsen Sidebar menüyü gizleyemez!
-/>
+      {/* 1. SOL TARAFTA SIDEBAR */}
+      <Sidebar 
+        activeTab={activeTab} 
+        
+        // ❌ HATALI OLAN: onNavigate={setCurrentView}
+        // ✅ DOĞRUSU (Bunu yapıştır):
+        onNavigate={setActiveTab} 
+        toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        onLogout={handleLogout}
+        isOpen={isSidebarOpen}
+        companySettings={companySettings}
+        userRole={userRole}
+        
+      />
 
-      {/* 2. İÇERİK ALANI */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}>
-         
-         <Header 
-            sidebarOpen={isSidebarOpen} 
-            setSidebarOpen={setIsSidebarOpen} 
-            currentUser={currentUser}
-            userRole={userRole}
-            onNavigate={handleNavigate} 
-            onLogout={handleLogout}
-         />
+      {/* 2. SAĞ TARAFTA İÇERİK ALANI */}
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}>
+        
+        {/* A. EN ÜSTTE HEADER (Bildirimler Burada) */}
+        <Header 
+          currentUser={currentUser} // 👈 Bildirimler için şart
+          userRole={userRole}
+          toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+          onNavigate={setActiveTab}
+        />
 
-         <main className="flex-1 p-8 overflow-y-auto">
-            {renderContent()}
-         </main>
-
+        {/* B. ANA İÇERİK (Dashboard, İzinler vb. buraya gelir) */}
+        <main className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
+           <div className="max-w-7xl mx-auto animate-in fade-in duration-500">
+              {renderContent()}
+           </div>
+        </main>
       </div>
+
     </div>
-  );
-}
+  )};

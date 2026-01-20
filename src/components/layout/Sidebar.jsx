@@ -17,7 +17,8 @@ export default function Sidebar({ activeTab, onNavigate, onLogout, isOpen, compa
     { id: 'recruitment', label: 'İşe Alım', icon: Briefcase, roles: ['general_manager', 'hr'] }, // Sadece bu rollere özel
     { id: 'documents', label: 'Dokümanlar', icon: File },
     { id: 'planner', label: 'Ajanda & Takvim', icon: Calendar },
-    { id: 'performance', label: 'Performans', icon: BarChart2 }, // BarChart2'yi lucide-react'ten import et
+    { id: 'performance', label: 'Performans', icon: BarChart2 }, 
+    
   ];
 
   // Rol kontrolü yaparak menüyü filtrele

@@ -1,181 +1,161 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../supabase'; 
+import { supabase } from '../../supabase';
 import { 
-  Play, Pause, Clock, Calendar, Briefcase, ArrowRight, Sun
+  Clock, Calendar, DollarSign, User, 
+  Briefcase, CheckCircle, AlertCircle
 } from 'lucide-react';
+// 👇 1. Duyuru Bileşenini Çağırıyoruz
+import DashboardAnnouncements from "../../components/DashboardAnnouncements";
 
 export default function EmployeeDashboard({ onNavigate, currentUser }) {
-  const [activeSession, setActiveSession] = useState(null);
-  const [loading, setLoading] = useState(false);
-  
-  // --- KRONOMETRE STATE ---
-  const [elapsedTime, setElapsedTime] = useState('00:00:00');
+  const [stats, setStats] = useState({
+    leaveBalance: 0,
+    workedHours: 0,
+    nextPayment: null
+  });
+  const [loading, setLoading] = useState(true);
 
-  // 1. Aktif Oturumu Kontrol Et
   useEffect(() => {
-    if (currentUser?.id) checkActiveSession();
+    if (currentUser) fetchEmployeeData();
   }, [currentUser]);
 
-  // 2. Canlı Kronometre Mantığı
-  useEffect(() => {
-    let interval;
-    if (activeSession) {
-      interval = setInterval(() => {
-        const now = new Date();
-        // Giriş saatini tarih objesine çevir
-        const [h, m, s] = activeSession.check_in.split(':').map(Number);
-        const startTime = new Date();
-        startTime.setHours(h, m, s || 0);
-        
-        const diff = now - startTime;
-        
-        // Saat, Dakika, Saniye Hesapla
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-        // Formatla (01:05:09 gibi)
-        const format = (num) => num.toString().padStart(2, '0');
-        setElapsedTime(`${format(hours)}:${format(minutes)}:${format(seconds)}`);
-      }, 1000);
-    } else {
-      setElapsedTime('00:00:00');
-    }
-    return () => clearInterval(interval);
-  }, [activeSession]);
-
-  const checkActiveSession = async () => {
-    const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
-      .from('time_logs')
-      .select('*')
-      .eq('employee_id', currentUser.id)
-      .eq('date', today)
-      .is('check_out', null)
-      .single();
-
-    if (data) setActiveSession(data);
-  };
-
-  const handlePunch = async () => {
-    if (!currentUser) return;
-    setLoading(true);
-    
-    // ✅ SAAT FORMATINI GARANTİLE (24 SAAT)
-    const now = new Date().toLocaleTimeString('tr-TR', { hour12: false });
-    const today = new Date().toISOString().split('T')[0];
-
+  const fetchEmployeeData = async () => {
     try {
-      if (!activeSession) {
-        // --- BAŞLAT ---
-        const { data, error } = await supabase
-          .from('time_logs')
-          .insert([{
-             employee_id: currentUser.id,
-             date: today,
-             check_in: now,
-             status: 'Active'
-          }])
-          .select()
-          .single();
-          
-        if (error) throw error;
-        setActiveSession(data); 
-      } else {
-        // --- BİTİR ---
-        const { error } = await supabase
-          .from('time_logs')
-          .update({
-             check_out: now,
-             status: 'Completed'
-          })
-          .eq('id', activeSession.id);
+      setLoading(true);
+      
+      // 1. İzin Bakiyesi (employees tablosundan)
+      const { data: empData } = await supabase
+        .from('employees')
+        .select('annual_leave_days')
+        .eq('id', currentUser.id)
+        .single();
 
-        if (error) throw error;
-        setActiveSession(null); 
+      // 2. Bu Ay Çalışılan Saat (time_logs tablosundan)
+      const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+      const { data: logs } = await supabase
+        .from('time_logs')
+        .select('duration_minutes')
+        .eq('employee_id', currentUser.id)
+        .gte('date', startOfMonth);
+
+      const totalMinutes = logs?.reduce((acc, log) => acc + (log.duration_minutes || 0), 0) || 0;
+      const hours = Math.round(totalMinutes / 60);
+
+      // 3. Sonraki Maaş (Statik veya payrolls tablosundan)
+      // Şimdilik ayın 15'i olarak hesaplayalım
+      const today = new Date();
+      const paymentDate = new Date(today.getFullYear(), today.getMonth(), 15);
+      if (today > paymentDate) {
+          paymentDate.setMonth(paymentDate.getMonth() + 1);
       }
+
+      setStats({
+        leaveBalance: empData?.annual_leave_days || 0,
+        workedHours: hours,
+        nextPayment: paymentDate.toLocaleDateString('tr-TR')
+      });
+
     } catch (error) {
-      alert("İşlem hatası: " + error.message);
+      console.error("Veri hatası:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Günaydın';
-    if (hour < 18) return 'Tünaydın';
-    return 'İyi Akşamlar';
-  };
-
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
       
-      {/* --- BANNER --- */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
-         <div className="absolute top-0 right-0 p-4 opacity-10"><Sun className="w-32 h-32 text-white" /></div>
-         
-         <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div>
-               <h1 className="text-3xl font-bold mb-2">{getGreeting()}, {currentUser?.name?.split(' ')[0]}! 👋</h1>
-               <p className="text-blue-100 opacity-90">Bugünkü mesai durumun aşağıdadır.</p>
-            </div>
-            
-            {/* KRONOMETRE KUTUSU */}
-            <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/20 flex flex-col items-center gap-3 w-full md:w-auto min-w-[200px]">
-               <div className="text-center">
-                  <p className="text-xs font-bold text-blue-100 uppercase tracking-wider mb-1">
-                    {activeSession ? 'Geçen Süre' : 'Mesai Başlamadı'}
-                  </p>
-                  {/* CANLI SAYAN SAAT */}
-                  <p className="font-mono text-3xl font-bold tracking-wider">
-                    {activeSession ? elapsedTime : '--:--:--'}
-                  </p>
-                  {activeSession && <p className="text-[10px] opacity-70 mt-1">Giriş: {activeSession.check_in.slice(0,5)}</p>}
-               </div>
-               
-               <button 
-                 onClick={handlePunch}
-                 disabled={loading}
-                 className={`w-full py-2.5 px-6 rounded-lg font-bold flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 ${
-                   activeSession 
-                     ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30' 
-                     : 'bg-green-500 hover:bg-green-600 text-white shadow-green-500/30'
-                 }`}
-               >
-                 {loading ? <span className="animate-spin">⌛</span> : activeSession ? <><Pause className="w-4 h-4" /> Bitir</> : <><Play className="w-4 h-4" /> Başlat</>}
-               </button>
-            </div>
+      {/* BAŞLIK */}
+      <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+         <div>
+            <h1 className="text-2xl font-bold text-gray-800">Hoş Geldin, {currentUser?.name?.split(' ')[0]} 👋</h1>
+            <p className="text-gray-500">Bugün işler yolunda görünüyor.</p>
+         </div>
+         <div className="hidden md:block text-right">
+             <p className="text-xs font-bold text-gray-400 uppercase">GÜNCEL TARİH</p>
+             <p className="text-lg font-bold text-gray-800">{new Date().toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
          </div>
       </div>
 
-      {/* --- HIZLI MENÜLER --- */}
+      {/* İSTATİSTİK KARTLARI */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <div onClick={() => onNavigate('leave')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
-            <div className="flex justify-between items-start mb-4">
-               <div className="p-3 bg-orange-50 rounded-lg text-orange-600 group-hover:bg-orange-100"><Calendar className="w-6 h-6"/></div>
+         {/* İzin Bakiyesi */}
+         <div onClick={() => onNavigate('leave')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:border-blue-200 cursor-pointer transition-all group">
+            <div className="flex justify-between items-start">
+               <div>
+                  <p className="text-sm font-bold text-gray-500">İzin Hakkı</p>
+                  <h3 className="text-3xl font-bold text-gray-800 mt-2">{stats.leaveBalance} <span className="text-sm text-gray-400 font-medium">Gün</span></h3>
+               </div>
+               <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:scale-110 transition-transform"><Calendar className="w-6 h-6"/></div>
             </div>
-            <h3 className="font-bold text-gray-800 text-lg">İzin Talepleri</h3>
-            <p className="text-sm text-gray-500 mt-1">İzinlerini yönet.</p>
+            <p className="text-xs text-blue-600 mt-3 font-bold flex items-center gap-1">Talep Oluştur &rarr;</p>
          </div>
 
-         <div onClick={() => onNavigate('time-tracking')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
-            <div className="flex justify-between items-start mb-4">
-               <div className="p-3 bg-blue-50 rounded-lg text-blue-600 group-hover:bg-blue-100"><Clock className="w-6 h-6"/></div>
-               <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600" />
+         {/* Çalışılan Saat */}
+         <div onClick={() => onNavigate('time-tracking')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:border-orange-200 cursor-pointer transition-all group">
+            <div className="flex justify-between items-start">
+               <div>
+                  <p className="text-sm font-bold text-gray-500">Bu Ay Çalışma</p>
+                  <h3 className="text-3xl font-bold text-gray-800 mt-2">{stats.workedHours} <span className="text-sm text-gray-400 font-medium">Saat</span></h3>
+               </div>
+               <div className="p-3 bg-orange-50 text-orange-600 rounded-xl group-hover:scale-110 transition-transform"><Clock className="w-6 h-6"/></div>
             </div>
-            <h3 className="font-bold text-gray-800 text-lg">Zaman Çizelgesi</h3>
-            <p className="text-sm text-gray-500 mt-1">Geçmiş kayıtlarını incele.</p>
+            <p className="text-xs text-gray-400 mt-3">Performansın gayet iyi 👍</p>
          </div>
 
-         <div onClick={() => onNavigate('payroll')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
-            <div className="flex justify-between items-start mb-4">
-               <div className="p-3 bg-green-50 rounded-lg text-green-600 group-hover:bg-green-100"><Briefcase className="w-6 h-6"/></div>
+         {/* Maaş Günü */}
+         <div className="bg-gradient-to-br from-green-500 to-emerald-700 text-white p-6 rounded-xl shadow-lg relative overflow-hidden">
+            <div className="relative z-10">
+               <p className="text-green-100 text-sm font-bold">Sonraki Ödeme</p>
+               <h3 className="text-3xl font-bold mt-2">{stats.nextPayment}</h3>
+               <p className="text-xs text-green-100 mt-3 opacity-80">Tahmini ödeme günüdür.</p>
             </div>
-            <h3 className="font-bold text-gray-800 text-lg">Bordrolar</h3>
-            <p className="text-sm text-gray-500 mt-1">Maaş ödemelerini gör.</p>
+            <DollarSign className="absolute -bottom-4 -right-4 w-24 h-24 text-white opacity-10 rotate-12"/>
          </div>
       </div>
+
+      {/* 👇 2. DUYURULAR VE KİŞİSEL BİLGİLER (Izgara Yapısı) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+         
+         {/* SOL: DUYURULAR (2 Birim) */}
+         <div className="lg:col-span-2 h-full min-h-[400px]">
+            {/* Çalışanlar sadece 'okuyucu' olduğu için post atamaz, bu yüzden userRole='employee' gidiyor */}
+            <DashboardAnnouncements 
+                userRole="employee" 
+                currentUser={currentUser} 
+            />
+         </div>
+
+         {/* SAĞ: PROFİL KARTI (1 Birim) */}
+         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col justify-center items-center text-center h-full">
+            <div className="w-24 h-24 bg-gray-100 rounded-full mb-4 border-4 border-white shadow-lg overflow-hidden flex items-center justify-center">
+                {currentUser?.avatar ? (
+                    <img src={currentUser.avatar} alt="Profile" className="w-full h-full object-cover"/>
+                ) : (
+                    <span className="text-3xl font-bold text-gray-400">{currentUser?.name?.charAt(0)}</span>
+                )}
+            </div>
+            <h3 className="text-xl font-bold text-gray-800">{currentUser?.name}</h3>
+            <p className="text-gray-500 text-sm mb-6">{currentUser?.role === 'employee' ? 'Personel' : currentUser?.role}</p>
+            
+            <div className="w-full space-y-3">
+                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                    <span className="text-xs font-bold text-gray-500 flex items-center gap-2"><Briefcase className="w-4 h-4"/> Departman</span>
+                    <span className="text-xs font-bold text-gray-800">{currentUser?.department || '-'}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                    <span className="text-xs font-bold text-gray-500 flex items-center gap-2"><CheckCircle className="w-4 h-4"/> Durum</span>
+                    <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-1 rounded">Aktif</span>
+                </div>
+            </div>
+
+            <button onClick={() => onNavigate('settings')} className="mt-6 text-sm text-blue-600 font-bold hover:underline">
+                Profil Ayarları
+            </button>
+         </div>
+
+      </div>
+
     </div>
   );
 }
