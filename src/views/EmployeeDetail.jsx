@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase'; 
 import { 
-  ArrowLeft, Mail, Phone, MapPin, Calendar, Clock, 
-  CreditCard, FileText, CheckCircle, XCircle, ShieldAlert, User, Briefcase, Trash2, AlertTriangle
+  ArrowLeft, Mail, Phone, MapPin, Calendar, CreditCard, 
+  Briefcase, User, Trash2, AlertTriangle, CheckCircle, ShieldAlert, 
+  FileText, XCircle, Clock 
 } from 'lucide-react';
+
+// 👆 DÜZELTME: 'Clock', 'FileText' ve 'XCircle' eksiksiz eklendi.
 
 export default function EmployeeDetail({ employee, onBack, userRole }) {
   const [activeTab, setActiveTab] = useState('overview');
@@ -14,30 +17,26 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
     logs: []
   });
   
-  // 👇 Silme Talebi Durumu
   const [deleteStatus, setDeleteStatus] = useState(null); // 'none', 'pending'
-
-  // Profil Fotosu Hata Kontrolü
   const [imgError, setImgError] = useState(false);
 
   // Yetki Kontrolü
   const isAuthorized = ['general_manager', 'hr'].includes(userRole);
 
-  // --- VERİ ÇEKME ---
   useEffect(() => {
     if (employee?.id) {
         fetchEmployeeHistory();
-        checkDeleteRequest(); // 👇 Silme talebi var mı kontrol et
+        checkDeleteRequest();
     }
   }, [employee]);
 
-  // Silme Talebi Kontrolü
+  // Silme Talebi Kontrolü (Sadece 'Pending' olanları arıyoruz)
   const checkDeleteRequest = async () => {
     const { data } = await supabase
       .from('deletion_requests')
       .select('*')
       .eq('target_employee_id', employee.id)
-      .eq('status', 'Pending')
+      .eq('status', 'Pending') 
       .single();
     
     if (data) setDeleteStatus('pending');
@@ -49,12 +48,14 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
     try {
       // 1. İzin Geçmişi
       const { data: leaves } = await supabase.from('leave_requests').select('*').eq('employee_id', employee.id).order('created_at', { ascending: false });
+      
       // 2. Maaş Geçmişi
       let payrolls = [];
       if (isAuthorized) {
         const { data: payrollData } = await supabase.from('payrolls').select('*').eq('employee_id', employee.id).order('period', { ascending: false });
         payrolls = payrollData || [];
       }
+      
       // 3. Zaman Logları
       const { data: logs } = await supabase.from('time_logs').select('*').eq('employee_id', employee.id).order('date', { ascending: false }).limit(10);
 
@@ -67,41 +68,102 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
     }
   };
 
-  // 👇 HR: Silme Talebi Gönder
+  // ---------------- AKSİYONLAR ----------------
+
+  // 1. HR: Silme Talebi Gönder
   const handleRequestDelete = async () => {
-    if (!confirm(`${employee.name} isimli çalışanı silmek için GM onayı isteyeceksiniz. Emin misiniz?`)) return;
+    if (!confirm(`${employee.name} için silme onayı isteyeceksiniz. Emin misiniz?`)) return;
 
-    const { error } = await supabase.from('deletion_requests').insert({
-        target_employee_id: employee.id,
-        requester_id: (await supabase.auth.getUser()).data.user?.id,
-        status: 'Pending'
-    });
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) throw new Error("Oturum açmış kullanıcı bulunamadı.");
 
-    if (error) alert('Hata: ' + error.message);
-    else {
+        const { data: requesterEmployee, error: findError } = await supabase
+            .from('employees')
+            .select('id')
+            .eq('email', user.email)
+            .single();
+
+        if (findError || !requesterEmployee) {
+            throw new Error(`Sistemde '${user.email}' mailiyle eşleşen çalışan kaydı yok.`);
+        }
+
+        const { error } = await supabase.from('deletion_requests').insert({
+            target_employee_id: employee.id,
+            requester_id: requesterEmployee.id,
+            status: 'Pending'
+        });
+
+        if (error) throw error;
         alert('Silme talebi Genel Müdüre iletildi.');
         setDeleteStatus('pending');
+
+    } catch (error) {
+        alert('HATA: ' + error.message);
     }
   };
 
-  // 👇 GM: Silmeyi Onayla
-  const handleApproveDelete = async () => {
-    if (!confirm(`BU İŞLEM GERİ ALINAMAZ! ${employee.name} tamamen silinecek. Onaylıyor musunuz?`)) return;
+  // 2. HR: Talebi İptal Et (Vazgeç)
+  const handleCancelRequest = async () => {
+      if(!confirm("Silme talebini geri çekmek istiyor musunuz?")) return;
 
-    // A) Çalışanı sil
+      const { error } = await supabase
+        .from('deletion_requests')
+        .delete()
+        .eq('target_employee_id', employee.id)
+        .eq('status', 'Pending');
+
+      if (!error) {
+          alert("Talep geri çekildi.");
+          setDeleteStatus('none');
+      }
+  };
+
+  // 3. GM: Talebi Reddet
+  const handleRejectRequest = async () => {
+      if(!confirm("Silme talebini reddetmek istiyor musunuz? Personel silinmeyecek.")) return;
+
+      const { error } = await supabase
+        .from('deletion_requests')
+        .update({ status: 'Rejected' })
+        .eq('target_employee_id', employee.id)
+        .eq('status', 'Pending');
+
+      if (!error) {
+          alert("Talep reddedildi. Personel aktif kalıyor.");
+          setDeleteStatus('none');
+      }
+  };
+
+  // 4. GM: Talebi Onayla ve Sil
+  const handleApproveDelete = async () => {
+    if (!confirm(`ONAYLIYOR MUSUNUZ? ${employee.name} kalıcı olarak silinecek.`)) return;
+
     const { error: delError } = await supabase.from('employees').delete().eq('id', employee.id);
 
     if (delError) {
         alert('Silme başarısız: ' + delError.message);
     } else {
-        // B) Talebi güncelle
         await supabase.from('deletion_requests').update({ status: 'Approved' }).eq('target_employee_id', employee.id);
         alert('Çalışan başarıyla silindi.');
-        onBack(); // Listeye dön
+        onBack(); 
     }
   };
 
-  // Helper: Status Renkleri
+  // 5. GM: Direkt Silme (Talep yoksa)
+  const handleDirectDelete = async () => {
+      if (!confirm(`DİKKAT! ${employee.name} kalıcı olarak silinecek. Onaylıyor musunuz?`)) return;
+      await supabase.from('deletion_requests').delete().eq('target_employee_id', employee.id);
+      const { error } = await supabase.from('employees').delete().eq('id', employee.id);
+      if (error) alert('Silme hatası: ' + error.message);
+      else {
+          alert('Personel başarıyla silindi.');
+          onBack();
+      }
+  };
+
+  // ---------------- RENDERING ----------------
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'Approved': case 'Paid': return 'bg-green-100 text-green-700';
@@ -125,9 +187,9 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
         </button>
       </div>
 
-      {/* 👇 GM İÇİN UYARI ALANI (Eğer silme talebi varsa) */}
+      {/* GM İÇİN TALEP UYARISI KUTUSU */}
       {deleteStatus === 'pending' && userRole === 'general_manager' && (
-          <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex justify-between items-center animate-in fade-in">
+          <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4 animate-in fade-in">
               <div className="flex items-center gap-3">
                   <AlertTriangle className="w-6 h-6 text-red-600" />
                   <div>
@@ -135,9 +197,15 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
                       <p className="text-red-600 text-sm">HR departmanı bu personelin silinmesini talep etti.</p>
                   </div>
               </div>
-              <button onClick={handleApproveDelete} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">
-                 Onayla ve Sil
-              </button>
+              <div className="flex gap-2">
+                  {/* REDDET BUTONU */}
+                  <button onClick={handleRejectRequest} className="bg-white text-gray-700 border border-gray-300 hover:bg-gray-100 px-4 py-2 rounded-lg text-sm font-bold transition-colors">
+                     Reddet
+                  </button>
+                  <button onClick={handleApproveDelete} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors">
+                     Onayla ve Sil
+                  </button>
+              </div>
           </div>
       )}
 
@@ -170,22 +238,39 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
                     </div>
                 </div>
 
-                {/* 👇 HR SİLME BUTONU (Sadece HR görür, talep yoksa) */}
-                {userRole === 'hr' && deleteStatus === 'none' && (
-                    <button 
-                        onClick={handleRequestDelete}
-                        className="bg-white border border-red-200 text-red-600 hover:bg-red-50 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-sm"
-                    >
-                        <Trash2 className="w-4 h-4" /> Silme Talebi
-                    </button>
-                )}
-                 {userRole === 'hr' && deleteStatus === 'pending' && (
-                    <span className="bg-orange-50 text-orange-600 px-3 py-1 rounded-lg text-xs font-bold border border-orange-100 flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3"/> Onay Bekliyor
-                    </span>
-                )}
+                {/* AKSİYON BUTONLARI (SAĞ ÜST) */}
+                <div className="flex flex-col gap-2 items-end">
+                    
+                    {/* HR: TALEP OLUŞTUR */}
+                    {userRole === 'hr' && deleteStatus === 'none' && (
+                        <button onClick={handleRequestDelete} className="bg-white border border-red-200 text-red-600 hover:bg-red-50 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-sm">
+                            <Trash2 className="w-4 h-4" /> Silme Talebi
+                        </button>
+                    )}
+
+                    {/* GM: DİREKT SİLME */}
+                    {userRole === 'general_manager' && deleteStatus === 'none' && (
+                        <button onClick={handleDirectDelete} className="bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-sm">
+                            <Trash2 className="w-4 h-4" /> Personeli Sil
+                        </button>
+                    )}
+
+                    {/* HR: TALEBİ GÖR VE İPTAL ET */}
+                    {userRole === 'hr' && deleteStatus === 'pending' && (
+                        <div className="flex items-center gap-2">
+                            <span className="bg-orange-50 text-orange-600 px-3 py-1 rounded-lg text-xs font-bold border border-orange-100 flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3"/> Onay Bekliyor
+                            </span>
+                            {/* İPTAL ET BUTONU */}
+                            <button onClick={handleCancelRequest} className="bg-gray-100 hover:bg-gray-200 text-gray-600 p-1.5 rounded-lg transition-colors" title="Talebi Geri Çek">
+                                <XCircle className="w-4 h-4" />
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
+            {/* Bilgiler */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
                <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-gray-400"/> {employee.email}</div>
                <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-gray-400"/> {employee.phone || '-'}</div>
@@ -201,7 +286,7 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
             </div>
          </div>
 
-         {/* İSTATİSTİKLER (Sağ Taraf) */}
+         {/* SAĞ KARTLAR (Maaş & İzin) */}
          <div className="flex flex-row md:flex-col gap-4 w-full md:w-auto relative z-10">
              {isAuthorized ? (
                  <>
@@ -209,6 +294,7 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
                         <p className="text-xs font-bold text-green-600 uppercase flex items-center gap-1"><CreditCard className="w-3 h-3"/> Maaş</p>
                         <p className="text-xl font-bold text-green-800">${parseInt(employee.salary).toLocaleString()}</p>
                     </div>
+                    {/* 👇 'Clock' ikonu burada kullanılıyor */}
                     <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 flex-1 min-w-[150px]">
                         <p className="text-xs font-bold text-orange-600 uppercase flex items-center gap-1"><Clock className="w-3 h-3"/> Kalan İzin</p>
                         <p className="text-xl font-bold text-orange-800">{remainingLeave} Gün</p>
@@ -223,7 +309,7 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
          </div>
       </div>
 
-      {/* --- TAB MENÜ (AYNI KALDI) --- */}
+      {/* --- TAB MENÜ --- */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden min-h-[400px]">
          <div className="flex border-b border-gray-100 overflow-x-auto">
             {[
