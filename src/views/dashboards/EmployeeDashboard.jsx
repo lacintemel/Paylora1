@@ -123,6 +123,7 @@ export default function EmployeeDashboard({ onNavigate, currentUser }) {
             <DashboardAnnouncements 
                 userRole="employee" 
                 currentUser={currentUser} 
+                onNavigate={onNavigate}
             />
          </div>
 

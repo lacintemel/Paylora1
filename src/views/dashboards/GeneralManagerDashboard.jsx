@@ -106,7 +106,7 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
           
           {/* SOL TARAFA DUYURULARI EKLEDİK (Geniş Alan - span-2) */}
           <div className="lg:col-span-2 h-full min-h-[400px]">
-              <DashboardAnnouncements userRole={userRole} currentUser={currentUser} />
+              <DashboardAnnouncements userRole={userRole} currentUser={currentUser} onNavigate={onNavigate}/>
           </div>
 
           {/* SAĞ TARAFA SENİN ESKİ CHART VE AKSİYONLARINI KOYDUK */}

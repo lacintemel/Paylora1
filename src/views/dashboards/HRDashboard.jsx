@@ -117,6 +117,8 @@ export default function HRDashboard({ onNavigate, currentUser, userRole }) {
             <DashboardAnnouncements 
                 userRole={userRole} 
                 currentUser={currentUser} 
+                onNavigate={onNavigate}
+
             />
          </div>
 

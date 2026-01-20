@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase'; 
-import { Search, Plus, UserPlus, MoreVertical, Mail, Phone, MapPin, Building2 } from 'lucide-react';
+import { Search, UserPlus, Info, Mail, Phone, Building2 } from 'lucide-react';
+// 👇 Modal bileşenini import etmeyi unutma (Dosya yolu senin yapına göre değişebilir)
+import AddEmployeeModal from '../components/common/AddEmployeeModal'; 
 
 export default function Employees({ onViewProfile, userRole }) {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // 👇 Modalın açık/kapalı durumu
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   useEffect(() => {
     fetchEmployees();
@@ -30,16 +35,15 @@ export default function Employees({ onViewProfile, userRole }) {
   // 🔍 Arama Filtresi
   const filteredEmployees = employees.filter(emp =>
     emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.position.toLowerCase().includes(searchTerm.toLowerCase())
+    emp.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    emp.position?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // 🔒 YETKİ KONTROLÜ
-  // Sadece İK ve Genel Müdür maaşı görebilir ve eleman ekleyebilir
   const isAuthorized = ['general_manager', 'hr'].includes(userRole);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
        
        {/* BAŞLIK VE AKSİYONLAR */}
        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -50,7 +54,10 @@ export default function Employees({ onViewProfile, userRole }) {
          
          {/* Sadece Yetkililer Ekleme Yapar */}
          {isAuthorized && (
-            <button className="bg-blue-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 hover:bg-blue-700 font-bold shadow-sm transition-all hover:shadow-md">
+            <button 
+                onClick={() => setIsAddModalOpen(true)} // 👈 ARTIK MODAL AÇIYOR
+                className="bg-blue-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 hover:bg-blue-700 font-bold shadow-sm transition-all hover:shadow-md"
+            >
                 <UserPlus className="w-5 h-5" /> Yeni Çalışan Ekle
             </button>
          )}
@@ -79,7 +86,6 @@ export default function Employees({ onViewProfile, userRole }) {
                    <th className="px-6 py-4 font-bold">Departman</th>
                    <th className="px-6 py-4 font-bold">İletişim</th>
                    <th className="px-6 py-4 font-bold">Durum</th>
-                   {/* 🔒 Maaş Sütunu Gizleme */}
                    {isAuthorized && <th className="px-6 py-4 font-bold">Maaş</th>}
                    <th className="px-6 py-4 font-bold text-right">Detay</th>
                 </tr>
@@ -93,6 +99,7 @@ export default function Employees({ onViewProfile, userRole }) {
                     filteredEmployees.map((emp) => (
                     <tr 
                         key={emp.id} 
+                        // Satıra tıklayınca da detaya gitsin (Opsiyonel)
                         onClick={() => onViewProfile(emp)} 
                         className="hover:bg-blue-50/50 transition-colors cursor-pointer group"
                     >
@@ -135,15 +142,25 @@ export default function Employees({ onViewProfile, userRole }) {
                             </span>
                         </td>
                         
-                        {/* 🔒 Maaş Verisi */}
+                        {/* Maaş */}
                         {isAuthorized && (
                             <td className="px-6 py-4 font-bold text-gray-700 tabular-nums">
                                 ${parseInt(emp.salary).toLocaleString()}
                             </td>
                         )}
 
-                        <td className="px-6 py-4 text-right text-gray-400 group-hover:text-blue-600">
-                            <MoreVertical className="w-4 h-4 ml-auto" />
+                        {/* 👇 BURAYI DEĞİŞTİRDİK: INFO İKONU */}
+                        <td className="px-6 py-4 text-right">
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation(); // Satır tıklamasını engelle
+                                    onViewProfile(emp);
+                                }}
+                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-100 rounded-full transition-all ml-auto"
+                                title="Detayları Gör"
+                            >
+                                <Info className="w-5 h-5" />
+                            </button>
                         </td>
                     </tr>
                     ))
@@ -151,6 +168,18 @@ export default function Employees({ onViewProfile, userRole }) {
              </tbody>
           </table>
        </div>
+
+       {/* 👇 MODAL BİLEŞENİ EKLENDİ */}
+       {isAddModalOpen && (
+        <AddEmployeeModal 
+          onClose={() => setIsAddModalOpen(false)} 
+          onSuccess={() => {
+             setIsAddModalOpen(false);
+             fetchEmployees(); // Ekleme bitince listeyi yenile
+          }} 
+        />
+      )}
+
     </div>
   );
 }

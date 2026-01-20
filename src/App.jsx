@@ -174,7 +174,7 @@ const fetchCompanySettings = async () => {
           />
         );
       // ARTIK ANNOUNCEMENTS SAYFASINA GEREK YOK (Dashboard'a gömdük), BU SATIRI SİLEBİLİRSİN:
-      // case 'announcements': return <Announcements userRole={userRole} currentUser={currentUser} />;
+       case 'announcements': return <Announcements userRole={userRole} currentUser={currentUser} onNavigate={setActiveTab}/>;
       
       case 'recruitment': 
         if (userRole === 'employee') {
@@ -236,6 +236,7 @@ return (
           userRole={userRole}
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           onNavigate={setActiveTab}
+          onLogout={handleLogout}
         />
 
         {/* B. ANA İÇERİK (Dashboard, İzinler vb. buraya gelir) */}
