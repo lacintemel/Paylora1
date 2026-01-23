@@ -7,11 +7,14 @@ export default function TimeTracking({ currentUserId, userRole }) {
   const [loading, setLoading] = useState(true);
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [todayLogId, setTodayLogId] = useState(null);
+  const [startTime, setStartTime] = useState(null); // Süre hesabı için giriş saatini tutalım
 
   // Verileri Çek
   useEffect(() => {
-    fetchLogs();
-    checkTodayStatus();
+    if (currentUserId) {
+        fetchLogs();
+        checkTodayStatus();
+    }
   }, [currentUserId, userRole]);
 
   // Bugün giriş yapmış mı kontrol et
@@ -22,12 +25,16 @@ export default function TimeTracking({ currentUserId, userRole }) {
       .select('*')
       .eq('employee_id', currentUserId)
       .eq('date', today)
+      .order('created_at', { ascending: false }) // En son kaydı al
+      .limit(1)
       .single();
 
     if (data) {
       setTodayLogId(data.id);
       // Eğer çıkış saati yoksa hala içeridedir
-      setIsCheckedIn(!data.check_out);
+      const stillInside = !data.check_out;
+      setIsCheckedIn(stillInside);
+      if (stillInside) setStartTime(new Date(data.check_in));
     }
   };
 
@@ -40,10 +47,10 @@ export default function TimeTracking({ currentUserId, userRole }) {
             *,
             employees:employee_id (name, avatar, department)
         `)
-        .order('date', { ascending: false })
-        .order('check_in', { ascending: false });
+        .order('date', { ascending: false }) // En yeni tarih en üstte
+        .order('check_in', { ascending: false }); // Aynı gün içindeki en yeni saat
 
-      // 🔒 GÜVENLİK: Çalışan sadece kendini görsün
+      // 🔒 GÜVENLİK: Çalışan sadece kendini görsün, Yönetici herkesi
       if (userRole === 'employee') {
          query = query.eq('employee_id', currentUserId);
       }
@@ -58,19 +65,19 @@ export default function TimeTracking({ currentUserId, userRole }) {
     }
   };
 
-  // GİRİŞ YAP
+  // --- 🟢 GİRİŞ YAP (DÜZELTİLDİ) ---
   const handleCheckIn = async () => {
     const now = new Date();
-    const timeString = now.toTimeString().split(' ')[0]; // HH:MM:SS
     const dateString = now.toISOString().split('T')[0]; // YYYY-MM-DD
 
     try {
+      // ⚠️ DÜZELTME: Sadece saat değil, tam ISO formatı gönderiyoruz.
       const { data, error } = await supabase
         .from('time_logs')
         .insert({
           employee_id: currentUserId,
           date: dateString,
-          check_in: timeString,
+          check_in: now.toISOString(), // 👈 HATA BURADA ÇÖZÜLDÜ
           status: 'Present'
         })
         .select()
@@ -79,74 +86,91 @@ export default function TimeTracking({ currentUserId, userRole }) {
       if (error) throw error;
       
       setTodayLogId(data.id);
+      setStartTime(now);
       setIsCheckedIn(true);
-      fetchLogs(); // Listeyi yenile
+      fetchLogs(); 
     } catch (err) {
       alert("Giriş hatası: " + err.message);
     }
   };
 
-  // ÇIKIŞ YAP
+  // --- 🔴 ÇIKIŞ YAP (DÜZELTİLDİ) ---
   const handleCheckOut = async () => {
     if (!todayLogId) return;
     const now = new Date();
-    const timeString = now.toTimeString().split(' ')[0];
 
     try {
-      // Çıkış saatini güncelle
+      // Süre hesabı (Dakika cinsinden)
+      let duration = 0;
+      if (startTime) {
+          const diffMs = now - startTime;
+          duration = Math.floor(diffMs / 60000);
+      }
+
+      // ⚠️ DÜZELTME: Çıkış saati de ISO formatında olmalı
       const { error } = await supabase
         .from('time_logs')
         .update({
-          check_out: timeString,
-          // Basit süre hesabı (Backend'de trigger ile yapılması daha sağlıklıdır ama burada JS ile basitçe tutuyoruz)
-          status: 'Completed' 
+          check_out: now.toISOString(), // 👈 HATA BURADA ÇÖZÜLDÜ
+          status: 'Completed',
+          duration_minutes: duration // Eğer tablonda bu sütun varsa kaydeder
         })
         .eq('id', todayLogId);
 
       if (error) throw error;
 
       setIsCheckedIn(false);
+      setStartTime(null);
       fetchLogs();
     } catch (err) {
       alert("Çıkış hatası: " + err.message);
     }
   };
 
+  // Tabloda saati düzgün göstermek için yardımcı fonksiyon
+  const formatTime = (isoString) => {
+      if (!isoString) return '--:--';
+      // "2026-01-23T15:40:00" -> "15:40"
+      return new Date(isoString).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
        
-       {/* ÜST KISIM: BAŞLIK VE BUTONLAR */}
-       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+       {/* ÜST KISIM */}
+       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Zaman Takibi</h1>
-            <p className="text-gray-500">Mesai saatlerinizi kaydedin ve takip edin.</p>
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <Clock className="w-6 h-6 text-blue-600"/> Zaman Takibi
+            </h1>
+            <p className="text-gray-500 text-sm">Mesai saatlerinizi kaydedin ve takip edin.</p>
           </div>
 
           {/* GİRİŞ / ÇIKIŞ KARTI */}
-          <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+          <div className="flex items-center gap-4 w-full md:w-auto">
              {isCheckedIn ? (
                 <button 
                   onClick={handleCheckOut}
-                  className="flex items-center gap-2 bg-red-50 text-red-600 px-6 py-3 rounded-lg font-bold hover:bg-red-100 transition-all border border-red-100"
+                  className="w-full md:w-auto flex items-center justify-center gap-2 bg-red-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 active:scale-95"
                 >
                   <Square className="w-5 h-5 fill-current" /> Çıkış Yap
                 </button>
              ) : (
                 <button 
                   onClick={handleCheckIn}
-                  className="flex items-center gap-2 bg-green-50 text-green-700 px-6 py-3 rounded-lg font-bold hover:bg-green-100 transition-all border border-green-100"
+                  className="w-full md:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-200 active:scale-95"
                 >
                   <Play className="w-5 h-5 fill-current" /> Giriş Yap
                 </button>
              )}
              
-             <div className="h-10 w-px bg-gray-200 mx-2"></div>
+             <div className="hidden md:block h-10 w-px bg-gray-200 mx-2"></div>
              
-             <div className="pr-4">
-               <p className="text-xs text-gray-400 font-bold uppercase">Şu anki Durum</p>
+             <div className="hidden md:block pr-4">
+               <p className="text-xs text-gray-400 font-bold uppercase">Durum</p>
                <div className="flex items-center gap-1.5 font-bold text-gray-700">
-                 <Clock className={`w-4 h-4 ${isCheckedIn ? 'text-green-500 animate-pulse' : 'text-gray-400'}`} />
-                 {isCheckedIn ? 'Çalışıyor' : 'Mola / Dışarıda'}
+                 <div className={`w-2.5 h-2.5 rounded-full ${isCheckedIn ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></div>
+                 {isCheckedIn ? 'Mesai Başladı' : 'Mesai Dışı'}
                </div>
              </div>
           </div>
@@ -154,59 +178,67 @@ export default function TimeTracking({ currentUserId, userRole }) {
 
        {/* TABLO */}
        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
+          <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
              <History className="w-4 h-4 text-gray-500"/>
              <h3 className="text-sm font-bold text-gray-700">Hareket Geçmişi</h3>
           </div>
           
-          <table className="w-full text-left text-sm">
-             <thead className="bg-gray-50 border-b border-gray-100 text-gray-500 uppercase tracking-wider text-xs">
-                <tr>
-                   <th className="px-6 py-4 font-bold">Tarih</th>
-                   <th className="px-6 py-4 font-bold">Personel</th>
-                   <th className="px-6 py-4 font-bold text-green-600">Giriş</th>
-                   <th className="px-6 py-4 font-bold text-red-500">Çıkış</th>
-                   <th className="px-6 py-4 font-bold">Durum</th>
-                </tr>
-             </thead>
-             <tbody className="divide-y divide-gray-100">
-                {logs.length === 0 ? (
-                   <tr><td colSpan="5" className="p-8 text-center text-gray-500">Henüz kayıt yok.</td></tr>
-                ) : (
-                   logs.map(log => (
-                   <tr key={log.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 font-medium text-gray-700 tabular-nums">
-                         <div className="flex items-center gap-2">
-                            <CalendarCheck className="w-4 h-4 text-gray-400"/>
-                            {new Date(log.date).toLocaleDateString('tr-TR')}
-                         </div>
-                      </td>
-                      <td className="px-6 py-4 font-bold text-gray-800">
-                         {/* Kendi kaydıysa 'Siz' yazsın */}
-                         {log.employee_id === currentUserId ? 'Siz' : log.employees?.name}
-                      </td>
-                      <td className="px-6 py-4 text-green-700 font-bold tabular-nums bg-green-50/30">
-                         {log.check_in ? log.check_in.slice(0,5) : '--:--'}
-                      </td>
-                      <td className="px-6 py-4 text-red-600 font-bold tabular-nums bg-red-50/30">
-                         {log.check_out ? log.check_out.slice(0,5) : '--:--'}
-                      </td>
-                      <td className="px-6 py-4">
-                         {log.check_out ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600">
-                               <CheckCircle2 className="w-3 h-3"/> Tamamlandı
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+                <thead className="bg-white border-b border-gray-100 text-gray-500 uppercase tracking-wider text-xs">
+                    <tr>
+                    <th className="px-6 py-4 font-bold">Tarih</th>
+                    <th className="px-6 py-4 font-bold">Personel</th>
+                    <th className="px-6 py-4 font-bold text-green-600">Giriş</th>
+                    <th className="px-6 py-4 font-bold text-red-500">Çıkış</th>
+                    <th className="px-6 py-4 font-bold">Durum</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                    {loading ? (
+                        <tr><td colSpan="5" className="p-8 text-center text-gray-400">Yükleniyor...</td></tr>
+                    ) : logs.length === 0 ? (
+                        <tr><td colSpan="5" className="p-8 text-center text-gray-400">Henüz kayıt yok.</td></tr>
+                    ) : (
+                    logs.map(log => (
+                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 font-medium text-gray-700 tabular-nums">
+                            <div className="flex items-center gap-2">
+                                <CalendarCheck className="w-4 h-4 text-gray-400"/>
+                                {new Date(log.date).toLocaleDateString('tr-TR')}
+                            </div>
+                        </td>
+                        <td className="px-6 py-4 font-bold text-gray-800">
+                            {/* Kendi kaydıysa 'Siz' yazsın */}
+                            {log.employee_id === currentUserId ? 'Siz' : log.employees?.name || 'Bilinmiyor'}
+                        </td>
+                        <td className="px-6 py-4 text-green-700 font-bold tabular-nums">
+                            <span className="bg-green-50 px-2 py-1 rounded">
+                                {formatTime(log.check_in)}
                             </span>
-                         ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 animate-pulse">
-                               <Clock className="w-3 h-3"/> İçeride
+                        </td>
+                        <td className="px-6 py-4 text-red-600 font-bold tabular-nums">
+                            <span className="bg-red-50 px-2 py-1 rounded">
+                                {formatTime(log.check_out)}
                             </span>
-                         )}
-                      </td>
-                   </tr>
-                   ))
-                )}
-             </tbody>
-          </table>
+                        </td>
+                        <td className="px-6 py-4">
+                            {log.check_out ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">
+                                <CheckCircle2 className="w-3 h-3"/> Tamamlandı
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-600 border border-blue-100 animate-pulse">
+                                <Clock className="w-3 h-3"/> Çalışıyor...
+                                </span>
+                            )}
+                        </td>
+                    </tr>
+                    ))
+                    )}
+                </tbody>
+            </table>
+          </div>
        </div>
     </div>
   );

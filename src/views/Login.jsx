@@ -51,7 +51,7 @@ export default function Login() {
             </div>
             <h1 className="text-5xl font-bold mb-6 leading-tight">İnsan Kaynaklarını Geleceğe Taşı.</h1>
             <p className="text-lg text-gray-300 leading-relaxed">
-                Paylora ile işe alımdan bordroya, performanstan izin yönetimine kadar tüm süreçleri tek bir yerden yönetin.
+                PayMaki ile işe alımdan bordroya, performanstan izin yönetimine kadar tüm süreçleri tek bir yerden yönetin.
             </p>
             
             {/* Küçük İstatistik Kartı */}
@@ -105,7 +105,7 @@ export default function Login() {
                         <input
                             type="email"
                             required
-                            placeholder="ornek@paylora.com"
+                            placeholder="ornek@PayMaki.com"
                             className="block w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all font-medium"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
@@ -150,7 +150,7 @@ export default function Login() {
 
             {/* Footer / Demo Bilgisi */}
             <p className="text-center text-xs text-gray-400 mt-8">
-                &copy; 2026 Paylora Inc. Tüm hakları saklıdır.
+                &copy; 2026 PayMaki Inc. Tüm hakları saklıdır.
             </p>
          </div>
       </div>

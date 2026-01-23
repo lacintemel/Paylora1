@@ -68,7 +68,7 @@ export default function Settings({ userRole, currentUserId, onUpdate }) {
       const { error: dbError } = await supabase.from('company_settings').upsert({
          id: 1,
          company_logo: publicUrl,
-         company_name: companySettings.company_name || 'Paylora',
+         company_name: companySettings.company_name || 'PayMaki ',
          probation_months: companySettings.probation_months || 2
       });
       

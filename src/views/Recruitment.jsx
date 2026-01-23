@@ -4,6 +4,7 @@ import {
   Plus, MoreHorizontal, Mail, Phone, Calendar, 
   X, CheckCircle, DollarSign, Briefcase, UserPlus 
 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
 const STAGES = [
   { id: 'Applied', label: 'Başvuru', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -49,48 +50,87 @@ export default function Recruitment() {
         return;
     }
 
-    try {
-        // 1. İsim Ayrıştırma (İlk 2 harf + Soyisim)
+try {
+        // 1. İsim Ayrıştırma ve Şifre Oluşturma
         const nameParts = candidate.name.trim().split(' ');
-        const firstName = nameParts[0]; 
-        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : 'personel';
+        const firstName = nameParts[0].toLowerCase(); 
+        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1].toLowerCase() : 'personel';
         
-        // Örn: Ahmet Yılmaz -> ahyilmaz
+        // Türkçe karakterleri temizle (normalize)
+        const normalizeTr = (text) => text.replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c');
+        
         const prefix = normalizeTr(firstName.substring(0, 2) + lastName);
-        
-        const companyEmail = `${prefix}@paylora.com`;
+        const companyEmail = `${prefix}@paymaki.com`;
         const tempPassword = `${prefix}123`; 
 
-        // 2. Employees Tablosuna Ekle
+        // ----------------------------------------------------------------
+        // 🛠️ KRİTİK ADIM: GEÇİCİ CLIENT OLUŞTURMA
+        // Bu client, senin oturumunu kapatmadan yeni kullanıcı oluşturur.
+        // ----------------------------------------------------------------
+        const tempSupabase = createClient(
+            supabase.supabaseUrl, 
+            supabase.supabaseKey, 
+            {
+                auth: {
+                    autoRefreshToken: false,
+                    persistSession: false, // 👈 SENİN OTURUMUNU BOZMAZ
+                    detectSessionInUrl: false
+                }
+            }
+        );
+
+        // 2. AUTH SİSTEMİNE KAYIT ET (Kapı Kartını Ver)
+        const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+            email: companyEmail,
+            password: tempPassword,
+            options: {
+                data: { 
+                    full_name: candidate.name,
+                    avatar_url: firstName.substring(0,2).toUpperCase()
+                }
+            }
+        });
+
+        if (authError) throw new Error("Auth Kayıt Hatası: " + authError.message);
+        if (!authData.user) throw new Error("Kullanıcı oluşturulamadı.");
+
+        // 3. EMPLOYEES TABLOSUNA EKLE (Personel Dosyasını Aç)
+        // ⚠️ DİKKAT: 'id' olarak authData.user.id kullanıyoruz ki eşleşsinler!
         const { error: empError } = await supabase.from('employees').insert({
+            id: authData.user.id,     // 👈 ARTIK BU ID AUTH İLE AYNI!
             name: candidate.name,
-            email: companyEmail,      // Şirket Maili
-            personal_email: candidate.email, // Kendi Maili
+            email: companyEmail,      
+            personal_email: candidate.email,
             phone: candidate.phone,
-            department: candidate.department || 'Engineering', // Eğer boşsa varsayılan
+            department: candidate.department || 'Engineering', 
             position: candidate.position,
-            salary: candidate.offer_salary || 0, // Teklif edilen maaş
+            salary: candidate.offer_salary || 0,
             status: 'Active',
             avatar: firstName.substring(0,2).toUpperCase(),
             start_date: new Date().toISOString().split('T')[0],
-            is_first_login: true,     // 👈 İLK GİRİŞTE ŞİFRE DEĞİŞTİRME ZORUNLULUĞU
+            is_first_login: true,
             company_email: companyEmail
         });
 
-        if (empError) throw empError;
+        if (empError) {
+            // Eğer employees tablosuna eklerken hata olursa, açtığımız Auth kullanıcısını temizleyelim (Opsiyonel ama temizlik iyidir)
+            // await supabase.auth.admin.deleteUser(authData.user.id); // (Sadece service_role ile çalışır, burayı geçiyorum)
+            throw empError;
+        }
 
-        // 3. Adayın Statüsünü 'Hired' Yap
+        // 4. Adayın Statüsünü 'Hired' Yap
         await supabase.from('candidates').update({ stage: 'Hired' }).eq('id', candidate.id);
 
-        alert(`✅ PERSONEL OLUŞTURULDU!\n\nEmail: ${companyEmail}\nŞifre: ${tempPassword}\n\n(Maaş: $${candidate.offer_salary})`);
-        fetchCandidates();
+        alert(`✅ PERSONEL BAŞARIYLA OLUŞTURULDU!\n\n📧 Email: ${companyEmail}\n🔑 Şifre: ${tempPassword}\n\nLütfen bu bilgileri personele iletin.`);
+        
+        // Listeyi yenile (eğer fetchCandidates fonksiyonun props olarak geliyorsa veya bu dosyadaysa)
+        if(typeof fetchCandidates === 'function') fetchCandidates();
 
     } catch (error) {
-        alert("İşe alım hatası: " + error.message);
-        fetchCandidates();
+        console.error("Hata:", error);
+        alert("İşe alım sırasında hata: " + error.message);
     }
-  };
-
+};
   // --- SÜRÜKLE & BIRAK MANTIĞI ---
   const handleDragStart = (e, candidate) => {
     setDraggedCandidate(candidate);
