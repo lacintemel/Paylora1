@@ -28,7 +28,7 @@ export default function Sidebar({ activeTab, onNavigate, onLogout, isOpen, toggl
     return true;
   });
 
-  const companyName = companySettings?.company_name || 'Paylora';
+  const companyName = companySettings?.company_name || 'PayMaki';
   const logoUrl = companySettings?.company_logo;
   const [imgError, setImgError] = useState(false);
   useEffect(() => { setImgError(false); }, [logoUrl]);

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase'; 
 import { 
-  Calendar, Check, X, Clock, Plus, Filter, CheckCircle, XCircle, Loader2
+  Calendar, Check, X, Clock, Plus, Filter, CheckCircle, XCircle, Loader2, 
+  Edit2, Trash2, Save // 👇 Yeni ikonlar eklendi
 } from 'lucide-react';
 
 export default function LeaveManagement({ currentUserId, userRole }) {
@@ -9,11 +10,15 @@ export default function LeaveManagement({ currentUserId, userRole }) {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('All');
+  
+  // Talep Oluşturma Modalı
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  
-  // Yeni Talep Formu
   const [formData, setFormData] = useState({ type: 'Yıllık İzin', start: '', end: '', desc: '' });
+
+  // 👇 DÜZENLEME İÇİN YENİ STATE'LER
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingData, setEditingData] = useState(null); // Düzenlenen veriyi tutar
 
   // YÖNETİCİ KONTROLÜ
   const isManager = ['hr', 'general_manager'].includes(userRole);
@@ -30,10 +35,9 @@ export default function LeaveManagement({ currentUserId, userRole }) {
       .select(`
         *,
         employees ( name, avatar ) 
-      `) // İlişkili tablodan isim ve avatar çekiyoruz
+      `) 
       .order('created_at', { ascending: false });
 
-    // Eğer yönetici değilse sadece kendi izinlerini görsün
     if (!isManager) {
       query = query.eq('employee_id', currentUserId);
     }
@@ -45,9 +49,9 @@ export default function LeaveManagement({ currentUserId, userRole }) {
     setLoading(false);
   };
 
-  // --- 2. DURUM GÜNCELLEME (YÖNETİCİ) ---
+  // --- 2. DURUM GÜNCELLEME (HIZLI ONAY/RED) ---
   const handleStatusChange = async (id, newStatus) => {
-    // Optimistik güncelleme (Arayüzde hemen göster)
+    // Optimistik güncelleme
     setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: newStatus } : l));
 
     const { error } = await supabase
@@ -57,7 +61,7 @@ export default function LeaveManagement({ currentUserId, userRole }) {
 
     if (error) {
         alert("Güncelleme başarısız!");
-        fetchLeaves(); // Hata varsa geri al
+        fetchLeaves(); 
     }
   };
 
@@ -85,6 +89,55 @@ export default function LeaveManagement({ currentUserId, userRole }) {
     setSubmitting(false);
   };
 
+  // --- 4. 👇 YENİ: KAYIT SİLME ---
+  const handleDeleteRequest = async (id) => {
+      if(!confirm("Bu izin kaydını tamamen silmek istediğinize emin misiniz?")) return;
+      
+      const { error } = await supabase.from('leave_requests').delete().eq('id', id);
+      
+      if(error) alert("Silme hatası: " + error.message);
+      else fetchLeaves();
+  };
+
+  // --- 5. 👇 YENİ: DÜZENLEME MODALINI AÇ ---
+  const openEditModal = (leave) => {
+      setEditingData({
+          id: leave.id,
+          leave_type: leave.leave_type,
+          start_date: leave.start_date,
+          end_date: leave.end_date,
+          reason: leave.reason,
+          status: leave.status,
+          employee_name: leave.employees?.name // Başlıkta göstermek için
+      });
+      setIsEditModalOpen(true);
+  };
+
+  // --- 6. 👇 YENİ: DÜZENLEMEYİ KAYDET ---
+  const handleUpdateRequest = async (e) => {
+      e.preventDefault();
+      setSubmitting(true);
+
+      const { error } = await supabase.from('leave_requests').update({
+          leave_type: editingData.leave_type,
+          start_date: editingData.start_date,
+          end_date: editingData.end_date,
+          reason: editingData.reason,
+          status: editingData.status // Yönetici statüyü de değiştirebilir
+      }).eq('id', editingData.id);
+
+      if (error) {
+          alert('Güncelleme hatası: ' + error.message);
+      } else {
+          alert('Kayıt güncellendi! ✅');
+          setIsEditModalOpen(false);
+          setEditingData(null);
+          fetchLeaves();
+      }
+      setSubmitting(false);
+  };
+
+
   // --- FİLTRELEME VE HESAPLAMA ---
   const filteredLeaves = filterStatus === 'All' 
     ? leaves 
@@ -92,9 +145,8 @@ export default function LeaveManagement({ currentUserId, userRole }) {
 
   const pendingCount = leaves.filter(l => l.status === 'Pending').length;
 
-  // Avatar Helper
   const getAvatarContent = (leave) => {
-    const emp = leave.employees; // İlişkili tablo
+    const emp = leave.employees; 
     if (emp?.avatar && emp.avatar.startsWith('http')) {
         return <img src={emp.avatar} alt="Avatar" className="w-full h-full object-cover" />;
     }
@@ -102,7 +154,6 @@ export default function LeaveManagement({ currentUserId, userRole }) {
     return name.slice(0, 2).toUpperCase();
   };
 
-  // Gün hesaplama
   const calculateDays = (start, end) => {
     const s = new Date(start);
     const e = new Date(end);
@@ -155,7 +206,7 @@ export default function LeaveManagement({ currentUserId, userRole }) {
       {/* --- İZİN KARTLARI LİSTESİ --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredLeaves.map((leave) => (
-          <div key={leave.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+          <div key={leave.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow group">
             
             {/* Kart Üstü */}
             <div className="p-6 pb-4 flex justify-between items-start">
@@ -178,7 +229,7 @@ export default function LeaveManagement({ currentUserId, userRole }) {
               </span>
             </div>
 
-            {/* Kart Ortası (Detaylar) */}
+            {/* Kart Ortası */}
             <div className="px-6 py-2 space-y-2">
               <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">
                 <Calendar className="w-4 h-4 text-gray-400" />
@@ -191,9 +242,11 @@ export default function LeaveManagement({ currentUserId, userRole }) {
               <p className="text-sm text-gray-500 italic truncate">"{leave.reason}"</p>
             </div>
 
-            {/* Kart Altı (Aksiyonlar - Sadece Yönetici ve Bekleyenler İçin) */}
-            <div className="p-4 border-t border-gray-50 mt-4 flex gap-2">
-              {isManager && leave.status === 'Pending' ? (
+            {/* Kart Altı: AKSİYON BUTONLARI */}
+            <div className="p-4 border-t border-gray-50 mt-4 flex items-center gap-2">
+              
+              {/* Yönetici ve Bekleyen Talep ise: Hızlı Onay/Red Butonları */}
+              {isManager && leave.status === 'Pending' && (
                 <>
                   <button 
                     onClick={() => handleStatusChange(leave.id, 'Approved')}
@@ -208,12 +261,27 @@ export default function LeaveManagement({ currentUserId, userRole }) {
                     <X className="w-4 h-4" /> Reddet
                   </button>
                 </>
-              ) : (
-                <div className="w-full py-2 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
-                  {leave.status === 'Approved' ? <CheckCircle className="w-4 h-4" /> : 
-                   leave.status === 'Rejected' ? <XCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                  {leave.status === 'Pending' ? 'Yönetici Onayı Bekleniyor' : 'İşlem Tamamlandı'}
-                </div>
+              )}
+
+              {/* Yönetici Değilse veya Beklemede Değilse: Durum Bilgisi */}
+              {(!isManager || leave.status !== 'Pending') && (
+                 <div className="flex-1 text-sm text-gray-400 flex items-center gap-2">
+                    {leave.status === 'Approved' ? <CheckCircle className="w-4 h-4 text-green-500" /> : 
+                     leave.status === 'Rejected' ? <XCircle className="w-4 h-4 text-red-500" /> : <Clock className="w-4 h-4" />}
+                    {leave.status === 'Pending' ? 'Onay Bekleniyor' : 'İşlem Tamamlandı'}
+                 </div>
+              )}
+
+              {/* 👇 YENİ: DÜZENLE VE SİL BUTONLARI (Sadece Yönetici Görür) */}
+              {isManager && (
+                  <div className="flex items-center gap-1 border-l pl-2 border-gray-200">
+                      <button onClick={() => openEditModal(leave)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Düzenle">
+                          <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDeleteRequest(leave.id)} className="p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors" title="Sil">
+                          <Trash2 className="w-4 h-4" />
+                      </button>
+                  </div>
               )}
             </div>
           </div>
@@ -227,7 +295,7 @@ export default function LeaveManagement({ currentUserId, userRole }) {
         )}
       </div>
 
-      {/* --- TALEP OLUŞTURMA MODALI --- */}
+      {/* --- TALEP OLUŞTURMA MODALI (ESKİSİ GİBİ) --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
@@ -236,7 +304,7 @@ export default function LeaveManagement({ currentUserId, userRole }) {
               <div>
                 <label className="text-sm font-bold text-gray-700">İzin Türü</label>
                 <select 
-                  className="w-full border rounded-lg p-2 mt-1 outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  className="w-full border rounded-lg p-2 mt-1 bg-white"
                   value={formData.type}
                   onChange={(e) => setFormData({...formData, type: e.target.value})}
                 >
@@ -248,50 +316,96 @@ export default function LeaveManagement({ currentUserId, userRole }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-bold text-gray-700">Başlangıç</label>
+                  <input type="date" required className="w-full border rounded-lg p-2 mt-1" value={formData.start} onChange={(e) => setFormData({...formData, start: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700">Bitiş</label>
+                  <input type="date" required className="w-full border rounded-lg p-2 mt-1" value={formData.end} onChange={(e) => setFormData({...formData, end: e.target.value})} />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-bold text-gray-700">Açıklama</label>
+                <textarea rows="3" className="w-full border rounded-lg p-2 mt-1" placeholder="Neden izin istiyorsunuz?" value={formData.desc} onChange={(e) => setFormData({...formData, desc: e.target.value})}></textarea>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-bold">İptal</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold flex items-center gap-2">{submitting && <Loader2 className="w-4 h-4 animate-spin" />} Talep Oluştur</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- 👇 YENİ: DÜZENLEME MODALI --- */}
+      {isEditModalOpen && editingData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border border-blue-100" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                <div>
+                    <h2 className="text-xl font-bold text-gray-800">İzni Düzenle</h2>
+                    <p className="text-xs text-blue-600 font-medium">{editingData.employee_name}</p>
+                </div>
+                <button onClick={() => setIsEditModalOpen(false)}><X className="w-5 h-5 text-gray-400 hover:text-red-500"/></button>
+            </div>
+            
+            <form onSubmit={handleUpdateRequest} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-bold text-gray-700">İzin Türü</label>
+                    <select 
+                      className="w-full border rounded-lg p-2 mt-1 bg-white"
+                      value={editingData.leave_type}
+                      onChange={(e) => setEditingData({...editingData, leave_type: e.target.value})}
+                    >
+                      <option>Yıllık İzin</option>
+                      <option>Hastalık İzni</option>
+                      <option>Mazeret İzni</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-bold text-gray-700">Durum</label>
+                    <select 
+                      className="w-full border rounded-lg p-2 mt-1 bg-white font-bold text-gray-700"
+                      value={editingData.status}
+                      onChange={(e) => setEditingData({...editingData, status: e.target.value})}
+                    >
+                      <option value="Pending">Bekliyor</option>
+                      <option value="Approved">Onaylandı</option>
+                      <option value="Rejected">Reddedildi</option>
+                    </select>
+                  </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-bold text-gray-700">Başlangıç</label>
                   <input 
-                    type="date" 
-                    required
-                    className="w-full border rounded-lg p-2 mt-1 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.start}
-                    onChange={(e) => setFormData({...formData, start: e.target.value})}
+                    type="date" required className="w-full border rounded-lg p-2 mt-1" 
+                    value={editingData.start_date} onChange={(e) => setEditingData({...editingData, start_date: e.target.value})} 
                   />
                 </div>
                 <div>
                   <label className="text-sm font-bold text-gray-700">Bitiş</label>
                   <input 
-                    type="date" 
-                    required
-                    className="w-full border rounded-lg p-2 mt-1 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formData.end}
-                    onChange={(e) => setFormData({...formData, end: e.target.value})}
+                    type="date" required className="w-full border rounded-lg p-2 mt-1" 
+                    value={editingData.end_date} onChange={(e) => setEditingData({...editingData, end_date: e.target.value})} 
                   />
                 </div>
               </div>
+              
               <div>
                 <label className="text-sm font-bold text-gray-700">Açıklama</label>
                 <textarea 
-                  rows="3"
-                  className="w-full border rounded-lg p-2 mt-1 outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Neden izin istiyorsunuz?"
-                  value={formData.desc}
-                  onChange={(e) => setFormData({...formData, desc: e.target.value})}
+                  rows="3" className="w-full border rounded-lg p-2 mt-1" 
+                  value={editingData.reason} onChange={(e) => setEditingData({...editingData, reason: e.target.value})}
                 ></textarea>
               </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button 
-                  type="button" 
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-bold"
-                >
-                  İptal
-                </button>
-                <button 
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold flex items-center gap-2"
-                >
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Talep Oluştur
+              
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100 mt-2">
+                <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-bold">İptal</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold flex items-center gap-2">
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4"/>} 
+                    Kaydet
                 </button>
               </div>
             </form>

@@ -82,9 +82,8 @@ export default function App() {
       
       if (data) {
         setCurrentUser(data);
-        // Basit Rol Atama
-        if (['admin@paylora.com', 'ceo@paylora.com'].includes(data.email)) setUserRole('general_manager');
-        else if (data.email === 'hr@paylora.com' || data.department === 'HR') setUserRole('hr');
+        if (['admin@paymaki.com', 'ceo@paymaki.com'].includes(data.email)) setUserRole('general_manager');
+        else if (data.email === 'hr@paymaki.com' || data.department === 'HR') setUserRole('hr');
         else setUserRole('employee'); 
       }
     } catch (error) {
