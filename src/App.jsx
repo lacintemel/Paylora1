@@ -68,7 +68,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- 1. KULLANICI BİLGİLERİNİ ÇEK ---
   const fetchCurrentUser = async (email) => {
     if (!email) return;
     try {
