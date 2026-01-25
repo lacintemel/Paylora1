@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { 
   DollarSign, Calendar, FileText, Plus, Search, Loader2, 
-  CreditCard, XCircle, X, Printer, User, Clock, 
-  TrendingUp, TrendingDown, Briefcase, Building
+  CreditCard, XCircle, X, Printer, Clock, Save, Edit3,
+  TrendingUp, TrendingDown, Briefcase, Building, AlertCircle
 } from 'lucide-react';
 
 export default function Payroll({ userRole }) {
@@ -12,9 +12,15 @@ export default function Payroll({ userRole }) {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); 
   const [searchTerm, setSearchTerm] = useState('');
 
-  // DETAY MODALI İÇİN STATE
+  // DETAY MODALI STATE
   const [selectedPayroll, setSelectedPayroll] = useState(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [attendanceStats, setAttendanceStats] = useState({ days: 0, hours: 0, overtime: 0, loading: false });
+
+  // ⚡ DÜZENLEME STATE (Yöneticiler için)
+  const [editFormData, setEditFormData] = useState({
+      base_salary: 0, bonus: 0, deductions: 0, tax: 0, notes: ''
+  });
 
   const isManager = ['general_manager', 'hr'].includes(userRole);
 
@@ -27,10 +33,7 @@ export default function Payroll({ userRole }) {
     try {
       let query = supabase
         .from('payrolls')
-        .select(`
-          *,
-          employees ( id, name, avatar, department, position, salary, start_date )
-        `)
+        .select(`*, employees ( id, name, avatar, department, position, salary )`)
         .eq('period', selectedMonth)
         .order('status', { ascending: false });
 
@@ -44,35 +47,65 @@ export default function Payroll({ userRole }) {
     }
   };
 
-  // --- HESAPLAMA FONKSİYONLARI ---
-  const calculateNetPay = (p) => {
-    const base = p.base_salary || p.employees?.salary || 0;
-    const bonus = p.bonus || 0;
-    const deduction = p.deductions || 0;
-    const tax = p.tax || 0;
-    return base + bonus - deduction - tax;
+  const fetchEmployeeAttendance = async (employeeId) => {
+      setAttendanceStats({ days: 0, hours: 0, overtime: 0, loading: true });
+      try {
+          const { data: logs } = await supabase.from('time_logs')
+            .select('duration_minutes, date')
+            .eq('employee_id', employeeId)
+            .ilike('date', `${selectedMonth}%`);
+
+          const totalMinutes = logs?.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0) || 0;
+          const totalHours = Math.floor(totalMinutes / 60);
+          setAttendanceStats({ days: logs?.length || 0, hours: totalHours, overtime: Math.max(0, totalHours - 160), loading: false });
+      } catch (error) { console.error(error); }
   };
 
-  const calculateTotalEarnings = (p) => (p.base_salary || 0) + (p.bonus || 0);
-  const calculateTotalDeductions = (p) => (p.deductions || 0) + (p.tax || 0);
+  // --- CANLI HESAPLAMA (Editör Modu İçin) ---
+  const calculateLiveNetPay = () => {
+      // Formdaki verileri kullanır (Anlık değişim için)
+      const base = parseFloat(editFormData.base_salary) || 0;
+      const bonus = parseFloat(editFormData.bonus) || 0;
+      const deduction = parseFloat(editFormData.deductions) || 0;
+      const tax = parseFloat(editFormData.tax) || 0;
+      return base + bonus - deduction - tax;
+  };
 
-  // --- ÖDEME DURUMU DEĞİŞTİR ---
+  // --- VERİTABANI İŞLEMLERİ ---
+  const handleSaveChanges = async () => {
+      if (!isManager) return;
+      if (!confirm("Bordro güncellemeleri kaydedilsin mi?")) return;
+
+      try {
+          const { error } = await supabase.from('payrolls').update({
+              base_salary: editFormData.base_salary,
+              bonus: editFormData.bonus,
+              deductions: editFormData.deductions,
+              tax: editFormData.tax,
+              notes: editFormData.notes
+          }).eq('id', selectedPayroll.id);
+
+          if (error) throw error;
+
+          alert("Bordro Güncellendi! ✅");
+          setIsDetailOpen(false);
+          fetchPayrolls(); // Listeyi yenile
+      } catch (error) {
+          alert("Hata: " + error.message);
+      }
+  };
+
   const togglePaymentStatus = async (id, currentStatus) => {
     const newStatus = currentStatus === 'Pending' ? 'Paid' : 'Pending';
     if (!confirm(newStatus === 'Paid' ? 'Ödeme onaylansın mı?' : 'Ödeme iptal edilsin mi?')) return;
-
     try {
       const { error } = await supabase.from('payrolls').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
       setPayrolls(prev => prev.map(p => p.id === id ? { ...p, status: newStatus } : p));
-      // Modalı da güncelle (eğer açıksa)
-      if (selectedPayroll && selectedPayroll.id === id) {
-          setSelectedPayroll(prev => ({ ...prev, status: newStatus }));
-      }
+      if (selectedPayroll && selectedPayroll.id === id) setSelectedPayroll(prev => ({ ...prev, status: newStatus }));
     } catch (error) { alert("Hata: " + error.message); }
   };
 
-  // --- OTOMATİK OLUŞTUR ---
   const generatePayrollsForMonth = async () => {
     if (!confirm("Otomatik bordro oluşturulsun mu?")) return;
     setLoading(true);
@@ -87,13 +120,22 @@ export default function Payroll({ userRole }) {
     } catch (error) { alert("Hata: " + error.message); } finally { setLoading(false); }
   };
 
-  const filteredPayrolls = payrolls.filter(p => p.employees?.name?.toLowerCase().includes(searchTerm.toLowerCase()));
-
   // --- MODAL AÇMA ---
   const openDetailModal = (payroll) => {
       setSelectedPayroll(payroll);
+      // Form verilerini doldur
+      setEditFormData({
+          base_salary: payroll.base_salary || 0,
+          bonus: payroll.bonus || 0,
+          deductions: payroll.deductions || 0,
+          tax: payroll.tax || 0,
+          notes: payroll.notes || ''
+      });
       setIsDetailOpen(true);
+      if (payroll.employee_id) fetchEmployeeAttendance(payroll.employee_id);
   };
+
+  const filteredPayrolls = payrolls.filter(p => p.employees?.name?.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -110,7 +152,6 @@ export default function Payroll({ userRole }) {
          </div>
       </div>
 
-      {/* ARAMA */}
       <div className="relative"><Search className="absolute left-4 top-3.5 w-5 h-5 text-gray-400"/><input type="text" placeholder="Personel ara..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white border rounded-xl"/></div>
 
       {/* TABLO */}
@@ -120,7 +161,7 @@ export default function Payroll({ userRole }) {
                <thead>
                   <tr className="bg-gray-50 border-b text-xs text-gray-500 uppercase tracking-wider">
                      <th className="p-4 font-bold">Personel</th>
-                     <th className="p-4 font-bold">Temel Maaş</th>
+                     <th className="p-4 font-bold">Temel</th>
                      <th className="p-4 font-bold text-green-600">Bonus</th>
                      <th className="p-4 font-bold text-red-600">Kesinti</th>
                      <th className="p-4 font-bold">Net</th>
@@ -144,12 +185,12 @@ export default function Payroll({ userRole }) {
                         <td className="p-4 text-sm font-medium text-gray-600">${(payroll.base_salary||0).toLocaleString()}</td>
                         <td className="p-4 text-sm font-medium text-green-600">+${(payroll.bonus||0).toLocaleString()}</td>
                         <td className="p-4 text-sm font-medium text-red-500">-${((payroll.deductions||0) + (payroll.tax||0)).toLocaleString()}</td>
-                        <td className="p-4"><span className="font-bold bg-gray-100 px-2 py-1 rounded text-sm">${calculateNetPay(payroll).toLocaleString()}</span></td>
+                        <td className="p-4"><span className="font-bold bg-gray-100 px-2 py-1 rounded text-sm">${(calculateLiveNetPay.call({editFormData: payroll}) || (payroll.base_salary + payroll.bonus - payroll.deductions - payroll.tax)).toLocaleString()}</span></td>
                         <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-bold border ${payroll.status === 'Paid' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>{payroll.status === 'Paid' ? 'Ödendi' : 'Bekliyor'}</span></td>
                         <td className="p-4 text-right">
                             <div className="flex justify-end gap-2">
                                 {isManager && <button onClick={() => togglePaymentStatus(payroll.id, payroll.status)} className={`p-2 rounded-lg text-white ${payroll.status === 'Pending' ? 'bg-green-600' : 'bg-red-500'}`}>{payroll.status === 'Pending' ? <CreditCard className="w-4 h-4"/> : <XCircle className="w-4 h-4"/>}</button>}
-                                <button onClick={() => openDetailModal(payroll)} className="text-gray-400 hover:text-blue-600 p-2 bg-gray-50 hover:bg-blue-50 rounded-lg"><FileText className="w-4 h-4"/></button>
+                                <button onClick={() => openDetailModal(payroll)} className="text-gray-400 hover:text-blue-600 p-2 bg-gray-50 hover:bg-blue-50 rounded-lg"><Edit3 className="w-4 h-4"/></button>
                             </div>
                         </td>
                      </tr>
@@ -159,12 +200,11 @@ export default function Payroll({ userRole }) {
          </div>
       </div>
 
-      {/* --- DETAYLI MAAŞ BORDROSU MODALI --- */}
+      {/* --- DETAYLI VE DÜZENLENEBİLİR MAAŞ BORDROSU MODALI --- */}
       {isDetailOpen && selectedPayroll && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden max-h-[90vh] overflow-y-auto">
                 
-                {/* ÜST RENKLİ ŞERİT */}
                 <div className={`h-4 w-full ${selectedPayroll.status === 'Paid' ? 'bg-green-500' : 'bg-orange-400'}`}></div>
 
                 {/* HEADER */}
@@ -180,122 +220,85 @@ export default function Payroll({ userRole }) {
                                 <span className="text-gray-300">•</span>
                                 <Building className="w-3 h-3"/> {selectedPayroll.employees?.department}
                             </div>
-                            <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-600">
-                                <Calendar className="w-3 h-3"/> {selectedMonth} Dönemi
-                            </div>
                         </div>
                     </div>
                     <div className="text-right">
                         <div className="text-xs text-gray-500 font-bold uppercase tracking-wider">Net Ödenecek</div>
-                        <div className="text-3xl font-black text-gray-900">${calculateNetPay(selectedPayroll).toLocaleString()}</div>
+                        {/* ⚡ CANLI HESAPLANAN DEĞER */}
+                        <div className="text-3xl font-black text-gray-900 animate-in fade-in">
+                            ${calculateLiveNetPay().toLocaleString()}
+                        </div>
                         <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-bold border ${selectedPayroll.status === 'Paid' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>
-                            {selectedPayroll.status === 'Paid' ? 'ÖDENDİ ✅' : 'ÖDEME BEKLİYOR ⏳'}
+                            {selectedPayroll.status === 'Paid' ? 'ÖDENDİ ✅' : 'DÜZENLENİYOR ✏️'}
                         </span>
                     </div>
                 </div>
 
                 <div className="p-8 space-y-8 bg-gray-50/50">
                     
-                    {/* 1. BÖLÜM: ZAMAN VE DEVAMLILIK (MOCK DATA KULLANILIYOR) */}
+                    {/* ZAMAN BİLGİLERİ (READ ONLY) */}
                     <div>
-                        <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-blue-600"/> Zaman Çizelgesi & İzinler
-                        </h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                <div className="text-xs text-gray-400 font-bold uppercase">Çalışma Günü</div>
-                                <div className="text-xl font-bold text-gray-800 mt-1">22 Gün</div>
-                            </div>
-                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                <div className="text-xs text-gray-400 font-bold uppercase">Toplam Saat</div>
-                                <div className="text-xl font-bold text-gray-800 mt-1">176s</div>
-                            </div>
-                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                <div className="text-xs text-gray-400 font-bold uppercase">Mesai</div>
-                                <div className="text-xl font-bold text-blue-600 mt-1">0s</div>
-                            </div>
-                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                                <div className="text-xs text-gray-400 font-bold uppercase">Kullanılan İzin</div>
-                                <div className="text-xl font-bold text-orange-500 mt-1">0 Gün</div>
-                            </div>
+                        <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-blue-600"/> Zaman Çizelgesi (Otomatik)</h3>
+                        {attendanceStats.loading ? <Loader2 className="w-5 h-5 animate-spin text-gray-400"/> : (
+                        <div className="grid grid-cols-4 gap-4">
+                            <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm"><div className="text-xs text-gray-400 font-bold uppercase">Gün</div><div className="text-lg font-bold text-gray-800">{attendanceStats.days}</div></div>
+                            <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm"><div className="text-xs text-gray-400 font-bold uppercase">Saat</div><div className="text-lg font-bold text-gray-800">{attendanceStats.hours}s</div></div>
+                            <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm"><div className="text-xs text-gray-400 font-bold uppercase">Mesai</div><div className="text-lg font-bold text-blue-600">{attendanceStats.overtime}s</div></div>
                         </div>
+                        )}
                     </div>
 
-                    {/* 2. BÖLÜM: GELİR VE GİDER DETAYLARI */}
+                    {/* DÜZENLENEBİLİR ALANLAR */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* KAZANÇLAR */}
+                        {/* KAZANÇLAR (EDİT) */}
                         <div className="bg-white rounded-2xl border border-green-100 p-5 shadow-sm">
-                            <h3 className="text-green-700 font-bold flex items-center gap-2 mb-4 border-b border-green-50 pb-2">
-                                <TrendingUp className="w-5 h-5"/> Kazançlar (Income)
-                            </h3>
-                            <div className="space-y-3">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Temel Maaş</span>
-                                    <span className="font-bold text-gray-900">${(selectedPayroll.base_salary || 0).toLocaleString()}</span>
+                            <h3 className="text-green-700 font-bold flex items-center gap-2 mb-4 border-b border-green-50 pb-2"><TrendingUp className="w-5 h-5"/> Kazançlar</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 block mb-1">Temel Maaş</label>
+                                    <input type="number" disabled={!isManager} value={editFormData.base_salary} onChange={e=>setEditFormData({...editFormData, base_salary: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 font-bold text-gray-800 focus:ring-2 focus:ring-green-500 outline-none"/>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Mesai Ücreti</span>
-                                    <span className="font-bold text-gray-900">$0.00</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Performans Bonusu</span>
-                                    <span className="font-bold text-green-600">+${(selectedPayroll.bonus || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Yol / Yemek Yardımı</span>
-                                    <span className="font-bold text-gray-900">$0.00</span>
-                                </div>
-                                <div className="border-t border-dashed border-gray-200 pt-2 mt-2 flex justify-between items-center">
-                                    <span className="text-xs font-bold text-gray-400 uppercase">Toplam Brüt</span>
-                                    <span className="text-lg font-bold text-green-700">${calculateTotalEarnings(selectedPayroll).toLocaleString()}</span>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 block mb-1">Bonus / Ek Ödeme / Mesai</label>
+                                    <input type="number" disabled={!isManager} value={editFormData.bonus} onChange={e=>setEditFormData({...editFormData, bonus: e.target.value})} className="w-full border border-green-200 bg-green-50 rounded-lg p-2 font-bold text-green-700 focus:ring-2 focus:ring-green-500 outline-none"/>
                                 </div>
                             </div>
                         </div>
 
-                        {/* KESİNTİLER */}
+                        {/* KESİNTİLER (EDİT) */}
                         <div className="bg-white rounded-2xl border border-red-100 p-5 shadow-sm">
-                            <h3 className="text-red-700 font-bold flex items-center gap-2 mb-4 border-b border-red-50 pb-2">
-                                <TrendingDown className="w-5 h-5"/> Kesintiler (Deductions)
-                            </h3>
-                            <div className="space-y-3">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Gelir Vergisi</span>
-                                    <span className="font-bold text-red-600">-${(selectedPayroll.tax || 0).toLocaleString()}</span>
+                            <h3 className="text-red-700 font-bold flex items-center gap-2 mb-4 border-b border-red-50 pb-2"><TrendingDown className="w-5 h-5"/> Kesintiler</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 block mb-1">Vergi (Manuel Düzenlenebilir)</label>
+                                    <input type="number" disabled={!isManager} value={editFormData.tax} onChange={e=>setEditFormData({...editFormData, tax: e.target.value})} className="w-full border border-red-200 bg-red-50 rounded-lg p-2 font-bold text-red-700 focus:ring-2 focus:ring-red-500 outline-none"/>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">SGK Primi</span>
-                                    <span className="font-bold text-red-600">$0.00</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Özel Kesintiler / Avans</span>
-                                    <span className="font-bold text-red-600">-${(selectedPayroll.deductions || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="border-t border-dashed border-gray-200 pt-2 mt-2 flex justify-between items-center">
-                                    <span className="text-xs font-bold text-gray-400 uppercase">Toplam Kesinti</span>
-                                    <span className="text-lg font-bold text-red-600">-${calculateTotalDeductions(selectedPayroll).toLocaleString()}</span>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 block mb-1">Avans / Ceza / Diğer Kesintiler</label>
+                                    <input type="number" disabled={!isManager} value={editFormData.deductions} onChange={e=>setEditFormData({...editFormData, deductions: e.target.value})} className="w-full border border-red-200 bg-red-50 rounded-lg p-2 font-bold text-red-700 focus:ring-2 focus:ring-red-500 outline-none"/>
                                 </div>
                             </div>
                         </div>
                     </div>
                     
                     {/* NOT ALANI */}
-                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-800 flex items-start gap-3">
-                        <div className="mt-1"><FileText className="w-4 h-4"/></div>
-                        <div>
-                            <span className="font-bold">Not:</span> Bu bordro sistemsel olarak oluşturulmuştur. Ödeme tutarında bir hata olduğunu düşünüyorsanız lütfen İK departmanı ile iletişime geçiniz.
-                        </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">Bordro Notları (Avans detayı, yasa değişikliği vb.)</label>
+                        <textarea disabled={!isManager} value={editFormData.notes} onChange={e=>setEditFormData({...editFormData, notes: e.target.value})} className="w-full border rounded-xl p-3 text-sm h-20 outline-none focus:ring-2 focus:ring-blue-100" placeholder="Örn: 2000 TL avans kesildi. Resmi Gazete zammı eklendi."/>
                     </div>
 
                 </div>
 
-                {/* FOOTER */}
                 <div className="px-8 py-5 border-t border-gray-100 flex justify-between items-center bg-white">
-                    <button onClick={() => window.print()} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 font-bold text-sm">
-                        <Printer className="w-4 h-4"/> Yazdır / PDF
-                    </button>
-                    <button onClick={() => setIsDetailOpen(false)} className="bg-gray-800 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-black transition-colors shadow-lg shadow-gray-200">
-                        Kapat
-                    </button>
+                    <button onClick={() => window.print()} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 font-bold text-sm"><Printer className="w-4 h-4"/> Yazdır</button>
+                    <div className="flex gap-3">
+                        <button onClick={() => setIsDetailOpen(false)} className="bg-gray-100 text-gray-600 px-6 py-2.5 rounded-xl font-bold hover:bg-gray-200">Kapat</button>
+                        {isManager && (
+                            <button onClick={handleSaveChanges} className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 flex items-center gap-2">
+                                <Save className="w-4 h-4"/> Değişiklikleri Kaydet
+                            </button>
+                        )}
+                    </div>
                 </div>
 
              </div>
