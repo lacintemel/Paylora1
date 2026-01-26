@@ -4,7 +4,7 @@ import {
   Clock, Calendar, DollarSign, Briefcase, CheckCircle 
 } from 'lucide-react';
 import DashboardAnnouncements from '../../components/DashboardAnnouncements';
-import { getInitials } from '../../utils/avatarHelper';
+import { getInitials, isValidImageUrl } from '../../utils/avatarHelper';
 
 export default function EmployeeDashboard({ onNavigate, currentUser }) {
   const [stats, setStats] = useState({
@@ -128,7 +128,7 @@ export default function EmployeeDashboard({ onNavigate, currentUser }) {
          </div>
          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col justify-center items-center text-center h-full">
             <div className="w-24 h-24 bg-gray-100 rounded-full mb-4 border-4 border-white shadow-lg overflow-hidden flex items-center justify-center">
-                {currentUser?.avatar && currentUser.avatar.startsWith('http') ? <img src={currentUser.avatar} alt="Profile" className="w-full h-full object-cover"/> : <span className="text-3xl font-bold text-gray-400">{getInitials(currentUser?.name || 'Bilinmiyor')}</span>}
+                {isValidImageUrl(currentUser?.avatar) ? <img src={currentUser.avatar} alt="Profile" className="w-full h-full object-cover"/> : <span className="text-3xl font-bold text-gray-400">{getInitials(currentUser?.name || 'Bilinmiyor')}</span>}
             </div>
             <h3 className="text-xl font-bold text-gray-800">{currentUser?.name}</h3>
             <p className="text-gray-500 text-sm mb-6">{currentUser?.role === 'employee' ? 'Personel' : currentUser?.role}</p>
