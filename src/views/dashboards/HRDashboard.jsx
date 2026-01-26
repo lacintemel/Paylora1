@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 // 👇 1. YENİ İMPORT
 import DashboardAnnouncements from '../../components/DashboardAnnouncements';
+import { getInitials } from '../../utils/avatarHelper';
 
 // 👇 2. PROPS GÜNCELLENDİ: currentUser ve userRole eklendi
 export default function HRDashboard({ onNavigate, currentUser, userRole }) {
@@ -59,7 +60,7 @@ export default function HRDashboard({ onNavigate, currentUser, userRole }) {
     if (emp.avatar && emp.avatar.startsWith('http')) {
         return <img src={emp.avatar} alt="av" className="w-full h-full object-cover"/>;
     }
-    return emp.avatar || emp.name.charAt(0).toUpperCase();
+    return getInitials(emp.name || 'Bilinmiyor');
   };
 
   return (
