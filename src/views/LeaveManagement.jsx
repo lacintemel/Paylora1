@@ -4,6 +4,7 @@ import {
   Calendar, Check, X, Clock, Plus, Filter, CheckCircle, XCircle, Loader2, 
   Edit2, Trash2, Save // 👇 Yeni ikonlar eklendi
 } from 'lucide-react';
+import { getInitials } from '../utils/avatarHelper';
 
 export default function LeaveManagement({ currentUserId, userRole }) {
   // --- STATE ---
@@ -150,8 +151,7 @@ export default function LeaveManagement({ currentUserId, userRole }) {
     if (emp?.avatar && emp.avatar.startsWith('http')) {
         return <img src={emp.avatar} alt="Avatar" className="w-full h-full object-cover" />;
     }
-    const name = emp?.name || 'Unknown';
-    return name.slice(0, 2).toUpperCase();
+    return getInitials(emp?.name || 'Bilinmiyor');
   };
 
   const calculateDays = (start, end) => {
