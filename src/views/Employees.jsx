@@ -3,7 +3,7 @@ import { supabase } from '../supabase';
 import { Search, UserPlus, Info, Mail, Phone, Building2 } from 'lucide-react';
 // 👇 Modal bileşenini import etmeyi unutma (Dosya yolu senin yapına göre değişebilir)
 import AddEmployeeModal from '../components/common/AddEmployeeModal';
-import { getInitials } from '../utils/avatarHelper'; 
+import { getInitials, isValidImageUrl } from '../utils/avatarHelper'; 
 
 export default function Employees({ onViewProfile, userRole }) {
   const [employees, setEmployees] = useState([]);
@@ -108,7 +108,7 @@ export default function Employees({ onViewProfile, userRole }) {
                         <td className="px-6 py-4">
                             <div className="flex items-center gap-4">
                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-600 flex items-center justify-center font-bold shadow-sm border border-white text-xs">
-                                    {emp.avatar && emp.avatar.startsWith('http') ? <img src={emp.avatar} alt={emp.name} className="w-full h-full rounded-full object-cover"/> : getInitials(emp.name)}
+                                    {isValidImageUrl(emp.avatar) ? <img src={emp.avatar} alt={emp.name} className="w-full h-full rounded-full object-cover"/> : getInitials(emp.name)}
                                 </div>
                                 <div>
                                     <p className="font-bold text-gray-800">{emp.name}</p>
