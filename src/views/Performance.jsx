@@ -5,6 +5,7 @@ import {
   BarChart2, Clock, Calendar, Sparkles, Loader2,
   TrendingUp
 } from 'lucide-react';
+import { getInitials } from '../utils/avatarHelper';
 
 export default function Performance({ userRole, currentUserId }) {
   const [employees, setEmployees] = useState([]);
@@ -170,7 +171,7 @@ export default function Performance({ userRole, currentUserId }) {
 
                    <div className="flex items-center gap-4 w-full lg:w-1/4 min-w-[200px]">
                       <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center font-bold text-xl text-gray-600 shadow-inner overflow-hidden border border-gray-100">
-                         {emp.avatar ? <img src={emp.avatar} alt={emp.name} className="w-full h-full object-cover" /> : emp.name.charAt(0)}
+                         {emp.avatar && emp.avatar.startsWith('http') ? <img src={emp.avatar} alt={emp.name} className="w-full h-full object-cover" /> : getInitials(emp.name)}
                       </div>
                       <div>
                          <h3 className="font-bold text-gray-800 text-lg leading-tight">{emp.name}</h3>

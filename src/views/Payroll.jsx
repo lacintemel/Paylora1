@@ -5,6 +5,7 @@ import {
   CreditCard, XCircle, Printer, Clock, Save, Edit3,
   TrendingUp, TrendingDown, Briefcase, Building, PlusCircle, Trash2
 } from 'lucide-react';
+import { getInitials } from '../utils/avatarHelper';
 
 export default function Payroll({ userRole }) {
   const [payrolls, setPayrolls] = useState([]);
@@ -230,7 +231,7 @@ export default function Payroll({ userRole }) {
                      <tr key={payroll.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="p-4 flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-500 text-xs">
-                                {payroll.employees?.avatar ? <img src={payroll.employees.avatar} className="w-full h-full rounded-full object-cover"/> : payroll.employees?.name?.slice(0,2)}
+                                {payroll.employees?.avatar && payroll.employees.avatar.startsWith('http') ? <img src={payroll.employees.avatar} className="w-full h-full rounded-full object-cover"/> : getInitials(payroll.employees?.name || 'Bilinmiyor')}
                             </div>
                             <div>
                                 <div className="font-bold text-sm">{payroll.employees?.name}</div>
