@@ -3,7 +3,7 @@ import { supabase } from '../supabase';
 import { 
   DollarSign, Calendar, FileText, Plus, Search, Loader2, 
   CreditCard, XCircle, Printer, Clock, Save, Edit3,
-  TrendingUp, TrendingDown, Briefcase, Building, Percent, Hash, PlusCircle, Trash2
+  TrendingUp, TrendingDown, Briefcase, Building, PlusCircle, Trash2
 } from 'lucide-react';
 
 export default function Payroll({ userRole }) {
@@ -35,10 +35,10 @@ export default function Payroll({ userRole }) {
   ];
 
   const DEFAULT_DEDUCTIONS = [
-      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 }, // %14 Standart
-      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 }, // %1
-      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 }, // %15 Başlangıç
-      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 }, // Binde 7.59
+      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 }, 
+      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 }, 
+      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 }, 
+      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 }, 
       { id: 'advance', name: 'Avans Kesintisi', type: 'fixed', value: 0 },
   ];
 
@@ -51,27 +51,37 @@ export default function Payroll({ userRole }) {
         .from('payrolls')
         .select(`*, employees ( id, name, avatar, department, position, salary )`)
         .eq('period', selectedMonth)
-        .order('status', { ascending: false });
+        .order('status', { ascending: false }); // Bekleyenler önce
       if (error) throw error;
       setPayrolls(data || []);
     } catch (error) { console.error("Veri hatası:", error); } finally { setLoading(false); }
   };
 
-  // --- MANTIK VE HESAPLAMALAR ---
+  // --- 🧮 HESAPLAMA MOTORLARI ---
   
-  // Bir kalemin TL karşılığını hesapla (Yüzde ise Maaştan, değilse direkt)
+  // 1. Yardımcı: Tekil Kalem Hesapla
   const calculateItemAmount = (item, salary) => {
       const val = parseFloat(item.value) || 0;
-      if (item.type === 'percent') {
-          return (salary * val) / 100;
-      }
-      return val;
+      return item.type === 'percent' ? (salary * val) / 100 : val;
   };
 
-  // Toplamları Hesapla (Canlı)
-  const calculateTotals = () => {
-      const gross = parseFloat(baseSalary) || 0;
+  // 2. Tablo Satırı İçin Özet Hesapla (JSON verisinden)
+  const calculateRowSummary = (payroll) => {
+      const base = payroll.base_salary || 0;
+      // JSON listelerini topla
+      const totalEarnings = (payroll.earnings_details || []).reduce((acc, item) => acc + calculateItemAmount(item, base), 0);
+      const totalDeductions = (payroll.deductions_details || []).reduce((acc, item) => acc + calculateItemAmount(item, base), 0);
       
+      return {
+          totalEarnings,
+          totalDeductions,
+          net: base + totalEarnings - totalDeductions
+      };
+  };
+
+  // 3. Editör Modalı İçin Canlı Hesapla (State verisinden)
+  const calculateEditorTotals = () => {
+      const gross = parseFloat(baseSalary) || 0;
       const totalEarnings = earningsList.reduce((acc, item) => acc + calculateItemAmount(item, gross), 0);
       const totalDeductions = deductionsList.reduce((acc, item) => acc + calculateItemAmount(item, gross), 0);
       
@@ -84,18 +94,38 @@ export default function Payroll({ userRole }) {
   };
 
   // --- VERİTABANI İŞLEMLERİ ---
+
+  // ÖDEME YAP / İPTAL ET (TABLODAKİ BUTONLAR İÇİN)
+  const togglePaymentStatus = async (id, currentStatus) => {
+      if (!isManager) return;
+      const newStatus = currentStatus === 'Pending' ? 'Paid' : 'Pending';
+      const confirmMsg = newStatus === 'Paid' ? 'Ödemeyi ONAYLIYOR musunuz?' : 'Ödemeyi İPTAL EDİYOR musunuz?';
+      
+      if (!confirm(confirmMsg)) return;
+
+      try {
+          const { error } = await supabase.from('payrolls').update({ status: newStatus }).eq('id', id);
+          if (error) throw error;
+          
+          // Listeyi güncelle (Sayfa yenilemeden)
+          setPayrolls(prev => prev.map(p => p.id === id ? { ...p, status: newStatus } : p));
+          if (selectedPayroll && selectedPayroll.id === id) setSelectedPayroll(prev => ({ ...prev, status: newStatus }));
+          
+          alert(`İşlem Başarılı: ${newStatus === 'Paid' ? 'Ödendi' : 'İptal Edildi'}`);
+      } catch (error) { alert("Hata: " + error.message); }
+  };
   
   const handleSaveChanges = async () => {
       if (!isManager) return;
       if (!confirm("Bordro güncellemeleri kaydedilsin mi?")) return;
 
       try {
-          const totals = calculateTotals();
+          const totals = calculateEditorTotals();
 
           const { error } = await supabase.from('payrolls').update({
               base_salary: baseSalary,
-              earnings_details: earningsList,     // JSON olarak kaydet
-              deductions_details: deductionsList, // JSON olarak kaydet
+              earnings_details: earningsList,
+              deductions_details: deductionsList,
               net_pay: totals.net, // Hızlı sorgu için net tutarı da ayrıca güncelleyelim
               notes: note
           }).eq('id', selectedPayroll.id);
@@ -117,9 +147,9 @@ export default function Payroll({ userRole }) {
         const newPayrolls = employees.map(emp => ({
             employee_id: emp.id, period: selectedMonth, base_salary: emp.salary, 
             status: 'Pending',
-            earnings_details: DEFAULT_EARNINGS, // Varsayılan boş şablon
-            deductions_details: DEFAULT_DEDUCTIONS, // Varsayılan vergi şablonu
-            net_pay: emp.salary * 0.70 // Kabaca net (Detaylar sonra hesaplanır)
+            earnings_details: DEFAULT_EARNINGS, 
+            deductions_details: DEFAULT_DEDUCTIONS, 
+            net_pay: emp.salary * 0.70 
         }));
         await supabase.from('payrolls').upsert(newPayrolls, { onConflict: 'employee_id, period' });
         fetchPayrolls();
@@ -130,11 +160,8 @@ export default function Payroll({ userRole }) {
   const openDetailModal = (payroll) => {
       setSelectedPayroll(payroll);
       setBaseSalary(payroll.base_salary || payroll.employees?.salary || 0);
-      
-      // Eğer veritabanında detay yoksa varsayılanları yükle, varsa olanı getir
       setEarningsList(payroll.earnings_details && payroll.earnings_details.length > 0 ? payroll.earnings_details : DEFAULT_EARNINGS);
       setDeductionsList(payroll.deductions_details && payroll.deductions_details.length > 0 ? payroll.deductions_details : DEFAULT_DEDUCTIONS);
-      
       setNote(payroll.notes || '');
       setIsDetailOpen(true);
   };
@@ -177,7 +204,7 @@ export default function Payroll({ userRole }) {
 
       <div className="relative"><Search className="absolute left-4 top-3.5 w-5 h-5 text-gray-400"/><input type="text" placeholder="Personel ara..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white border rounded-xl"/></div>
 
-      {/* ANA TABLO */}
+      {/* --- ANA TABLO (GÜNCELLENMİŞ HALİ) --- */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
          <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -185,16 +212,20 @@ export default function Payroll({ userRole }) {
                   <tr className="bg-gray-50 border-b text-xs text-gray-500 uppercase tracking-wider">
                      <th className="p-4 font-bold">Personel</th>
                      <th className="p-4 font-bold">Temel Maaş</th>
+                     <th className="p-4 font-bold text-green-600">Ek Kazanç (+)</th>
+                     <th className="p-4 font-bold text-red-600">Kesinti (-)</th>
                      <th className="p-4 font-bold">Net Ödenecek</th>
                      <th className="p-4 font-bold">Durum</th>
-                     <th className="p-4 text-right">Detay</th>
+                     <th className="p-4 text-right">İşlem</th>
                   </tr>
                </thead>
                <tbody className="divide-y divide-gray-100">
-                  {loading ? <tr><td colSpan="5" className="p-12 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></td></tr> : 
+                  {loading ? <tr><td colSpan="7" className="p-12 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></td></tr> : 
                   payrolls.filter(p => p.employees?.name?.toLowerCase().includes(searchTerm.toLowerCase())).map((payroll) => {
-                     // Tablo görünümü için basit hesaplama (veya DB'den gelen net_pay)
-                     const netDisp = payroll.net_pay || 0;
+                     
+                     // 🔥 HER SATIR İÇİN ÖZETİ HESAPLA
+                     const summary = calculateRowSummary(payroll);
+
                      return (
                      <tr key={payroll.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="p-4 flex items-center gap-3">
@@ -207,10 +238,36 @@ export default function Payroll({ userRole }) {
                             </div>
                         </td>
                         <td className="p-4 text-sm font-medium text-gray-600">${(payroll.base_salary||0).toLocaleString()}</td>
-                        <td className="p-4"><span className="font-bold bg-gray-100 px-2 py-1 rounded text-sm">${netDisp.toLocaleString()}</span></td>
+                        
+                        {/* HESAPLANAN ÖZET DEĞERLER */}
+                        <td className="p-4 text-sm font-medium text-green-600">
+                            {summary.totalEarnings > 0 ? `+$${summary.totalEarnings.toLocaleString()}` : '-'}
+                        </td>
+                        <td className="p-4 text-sm font-medium text-red-500">
+                            {summary.totalDeductions > 0 ? `-$${summary.totalDeductions.toLocaleString()}` : '-'}
+                        </td>
+                        <td className="p-4"><span className="font-bold bg-gray-100 px-2 py-1 rounded text-sm">${summary.net.toLocaleString()}</span></td>
+                        
                         <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-bold border ${payroll.status === 'Paid' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>{payroll.status === 'Paid' ? 'Ödendi' : 'Bekliyor'}</span></td>
+                        
+                        {/* İŞLEM BUTONLARI (GERİ GELDİ) */}
                         <td className="p-4 text-right">
-                            <button onClick={() => openDetailModal(payroll)} className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg"><Edit3 className="w-4 h-4"/></button>
+                            <div className="flex justify-end gap-2">
+                                {isManager && (
+                                    payroll.status === 'Pending' ? (
+                                        <button onClick={() => togglePaymentStatus(payroll.id, payroll.status)} className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg transition-colors shadow-sm" title="Ödemeyi Onayla">
+                                            <CreditCard className="w-4 h-4"/>
+                                        </button>
+                                    ) : (
+                                        <button onClick={() => togglePaymentStatus(payroll.id, payroll.status)} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 p-2 rounded-lg transition-colors" title="Ödemeyi İptal Et">
+                                            <XCircle className="w-4 h-4"/>
+                                        </button>
+                                    )
+                                )}
+                                <button onClick={() => openDetailModal(payroll)} className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg border border-transparent hover:border-blue-100">
+                                    <Edit3 className="w-4 h-4"/>
+                                </button>
+                            </div>
                         </td>
                      </tr>
                   )})}
@@ -243,7 +300,7 @@ export default function Payroll({ userRole }) {
                     <div className="text-right">
                         <div className="text-xs text-gray-500 font-bold uppercase">NET ÖDENECEK</div>
                         <div className="text-3xl font-black text-gray-900 transition-all duration-300">
-                            ${calculateTotals().net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${calculateEditorTotals().net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                     </div>
                 </div>
@@ -270,29 +327,25 @@ export default function Payroll({ userRole }) {
                             <h3 className="text-green-700 font-bold flex items-center justify-between border-b border-green-100 pb-2">
                                 <span className="flex items-center gap-2"><TrendingUp className="w-5 h-5"/> Kazançlar / Eklemeler</span>
                                 <span className="text-sm bg-green-100 px-2 py-1 rounded text-green-800">
-                                    +${calculateTotals().totalEarnings.toLocaleString()}
+                                    +${calculateEditorTotals().totalEarnings.toLocaleString()}
                                 </span>
                             </h3>
                             
                             <div className="space-y-2">
                                 {earningsList.map((item, index) => (
                                     <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100 group">
-                                        {/* İsim Alanı */}
                                         {item.isCustom ? (
                                             <input type="text" placeholder="Kalem Adı..." value={item.name} onChange={(e) => updateItem('earnings', index, 'name', e.target.value)} className="flex-1 bg-white border border-gray-200 rounded px-2 py-1 text-sm font-medium"/>
                                         ) : (
                                             <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
                                         )}
 
-                                        {/* Değer */}
                                         <input type="number" disabled={!isManager} value={item.value} onChange={(e) => updateItem('earnings', index, 'value', e.target.value)} className="w-20 bg-white border border-gray-200 rounded px-2 py-1 text-sm text-right font-bold text-green-600 focus:outline-none focus:border-green-500"/>
 
-                                        {/* Tip Seçici (% veya ₺) */}
                                         <button disabled={!isManager} onClick={() => updateItem('earnings', index, 'type', item.type === 'fixed' ? 'percent' : 'fixed')} className={`w-8 h-8 flex items-center justify-center rounded font-bold text-xs ${item.type === 'percent' ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-600'}`}>
                                             {item.type === 'percent' ? '%' : '₺'}
                                         </button>
 
-                                        {/* Sil Butonu (Sadece Özel Eklenenler İçin) */}
                                         {isManager && item.isCustom && (
                                             <button onClick={() => removeItem('earnings', index)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
                                         )}
@@ -311,7 +364,7 @@ export default function Payroll({ userRole }) {
                             <h3 className="text-red-700 font-bold flex items-center justify-between border-b border-red-100 pb-2">
                                 <span className="flex items-center gap-2"><TrendingDown className="w-5 h-5"/> Kesintiler / Vergiler</span>
                                 <span className="text-sm bg-red-100 px-2 py-1 rounded text-red-800">
-                                    -${calculateTotals().totalDeductions.toLocaleString()}
+                                    -${calculateEditorTotals().totalDeductions.toLocaleString()}
                                 </span>
                             </h3>
 
