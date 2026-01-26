@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { X, Award, Mail, Phone, MapPin, Briefcase, Calendar, Users, DollarSign, Heart, GraduationCap } from 'lucide-react';
-import { getInitials } from '../../utils/avatarHelper';
+import { getInitials, isValidImageUrl } from '../../utils/avatarHelper';
 
 export default function EmployeeDetailModal({ employee, onClose }) {
   if (!employee) return null;
@@ -21,7 +21,7 @@ export default function EmployeeDetailModal({ employee, onClose }) {
         <div className="p-6 space-y-6">
             <div className="flex items-center gap-6">
               <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-3xl">
-                {employee.avatar && employee.avatar.startsWith('http') ? <img src={employee.avatar} alt="Avatar" className="w-full h-full rounded-full object-cover"/> : getInitials(employee.name || 'Bilinmiyor')}
+                {isValidImageUrl(employee.avatar) ? <img src={employee.avatar} alt="Avatar" className="w-full h-full rounded-full object-cover"/> : getInitials(employee.name || 'Bilinmiyor')}
               </div>
               <div className="flex-1">
                 <h3 className="text-2xl font-bold text-gray-800">{employee.name}</h3>

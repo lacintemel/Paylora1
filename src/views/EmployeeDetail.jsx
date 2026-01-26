@@ -5,7 +5,7 @@ import {
   Briefcase, User, Trash2, AlertTriangle, CheckCircle, ShieldAlert, 
   FileText, XCircle, Clock 
 } from 'lucide-react';
-import { getInitials } from '../utils/avatarHelper';
+import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
 
 // 👆 DÜZELTME: 'Clock', 'FileText' ve 'XCircle' eksiksiz eklendi.
 
@@ -215,7 +215,7 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50 rounded-full -mr-32 -mt-32 opacity-50 pointer-events-none"></div>
 
          <div className="w-32 h-32 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 border-4 border-white shadow-lg flex items-center justify-center overflow-hidden shrink-0 relative z-10">
-            {employee.avatar && employee.avatar.startsWith('http') && !imgError ? (
+            {isValidImageUrl(employee.avatar) && !imgError ? (
                <img src={employee.avatar} alt="Profile" onError={() => setImgError(true)} className="w-full h-full object-cover"/>
             ) : (
                <span className="text-4xl font-bold text-blue-600">{getInitials(employee.name)}</span>
