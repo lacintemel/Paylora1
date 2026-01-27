@@ -6,7 +6,8 @@ import {
   UserPlus, 
   Settings, 
   Calendar,
-  Clock
+  Clock,
+  TrendingUp
 } from 'lucide-react';
 
 const ROLES = {
@@ -46,6 +47,12 @@ export const navItems = [
     label: 'Maaş & Bordro',
     icon: CreditCard,
     allowedRoles: [ROLES.GM, ROLES.HR]
+  },
+  {
+    id: 'sales',
+    label: 'Satışlar',
+    icon: TrendingUp,
+    allowedRoles: [ROLES.GM, ROLES.HR, ROLES.EMPLOYEE]
   },
   {
     id: 'recruitment',
