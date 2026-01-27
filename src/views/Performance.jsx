@@ -234,7 +234,7 @@ export default function Performance({ userRole, currentUserId }) {
                       <div className="flex-1 text-center">
                          <div className="text-[10px] text-gray-400 uppercase font-extrabold mb-1 tracking-wider">Satış</div>
                          <div className="text-xl font-bold text-green-600 flex items-center justify-center gap-1.5">
-                             <DollarSign className="w-4 h-4"/> {emp.stats?.weekSalesCount || 0}
+                             <TrendingUp className="w-4 h-4"/> {emp.stats?.weekSalesCount || 0}
                          </div>
                          <div className="text-[9px] text-gray-500 mt-1">
                            {emp.stats?.weekSalesCount > 0 ? (
