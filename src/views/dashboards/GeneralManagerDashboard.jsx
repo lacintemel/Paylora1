@@ -13,6 +13,11 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
     pendingPayroll: 0,
     avgSalary: 0
   });
+  const [salesStats, setSalesStats] = useState({
+    totalSales: 0,
+    totalAmount: 0,
+    topSales: []
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,6 +28,7 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
     try {
       setLoading(true);
       const currentPeriod = new Date().toISOString().slice(0, 7); // "2026-01"
+      const currentMonth = new Date().toISOString().slice(0, 7);
 
       // 1. Çalışan İstatistikleri
       const { data: emps, error: empError } = await supabase.from('employees').select('salary');
@@ -37,6 +43,23 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
 
       const totalCost = payrolls?.reduce((sum, p) => sum + Number(p.net_pay), 0) || 0;
       const pendingCount = payrolls?.filter(p => p.status === 'Pending').length || 0;
+
+      // 3. Satışlar (Bu Ay)
+      const { data: salesData, error: salesError } = await supabase
+        .from('sales')
+        .select('*')
+        .eq('month', currentMonth)
+        .order('amount', { ascending: false })
+        .limit(5);
+      
+      if (!salesError && salesData) {
+        const totalSalesAmount = salesData.reduce((sum, s) => sum + Number(s.amount), 0);
+        setSalesStats({
+          totalSales: salesData.length,
+          totalAmount: totalSalesAmount,
+          topSales: salesData
+        });
+      }
 
       setStats({
         totalEmployees: totalEmps,
@@ -92,12 +115,12 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
            <p className="text-xs text-gray-400">Sektör ortalamasında</p>
         </div>
 
-        <div className="bg-gradient-to-br from-gray-900 to-gray-800 text-white p-6 rounded-xl shadow-lg flex flex-col justify-between h-32">
+        <div onClick={() => onNavigate('sales')} className="bg-gradient-to-br from-emerald-900 to-emerald-800 text-white p-6 rounded-xl shadow-lg flex flex-col justify-between h-32 cursor-pointer hover:shadow-xl transition-shadow">
            <div className="flex justify-between items-start">
-              <div><p className="text-sm font-bold text-gray-400">Tahmini Ciro</p><h3 className="text-2xl font-bold mt-1">$450,000</h3></div>
+              <div><p className="text-sm font-bold text-emerald-200">Bu Ay Satışlar</p><h3 className="text-2xl font-bold mt-1">${loading ? '...' : salesStats.totalAmount.toLocaleString()}</h3></div>
               <div className="p-2 bg-white/10 rounded-lg text-white"><TrendingUp className="w-5 h-5" /></div>
            </div>
-           <p className="text-xs text-green-400 flex items-center gap-1"><ArrowUpRight className="w-3 h-3"/> Hedefin %12 üzerinde</p>
+           <p className="text-xs text-emerald-200 flex items-center gap-1"><TrendingUp className="w-3 h-3"/> {salesStats.totalSales} işlem</p>
         </div>
       </div>
 
