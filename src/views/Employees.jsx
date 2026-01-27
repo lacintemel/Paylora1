@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase'; 
-import { Search, UserPlus, Info, Mail, Phone, Building2 } from 'lucide-react';
+import { Search, UserPlus, Info, Mail, Phone, Building2, Download } from 'lucide-react';
 // 👇 Modal bileşenini import etmeyi unutma (Dosya yolu senin yapına göre değişebilir)
 import AddEmployeeModal from '../components/common/AddEmployeeModal';
-import { getInitials, isValidImageUrl } from '../utils/avatarHelper'; 
+import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
+import { exportEmployeesToExcel } from '../utils/exportUtils';
+import { showSuccess } from '../utils/toast'; 
 
 export default function Employees({ onViewProfile, userRole }) {
   const [employees, setEmployees] = useState([]);
@@ -54,14 +56,22 @@ export default function Employees({ onViewProfile, userRole }) {
          </div>
          
          {/* Sadece Yetkililer Ekleme Yapar */}
-         {isAuthorized && (
+         <div className="flex gap-3">
+            {isAuthorized && (
+               <button 
+                   onClick={() => setIsAddModalOpen(true)} // 👈 ARTIK MODAL AÇIYOR
+                   className="bg-blue-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 hover:bg-blue-700 font-bold shadow-sm transition-all hover:shadow-md"
+               >
+                   <UserPlus className="w-5 h-5" /> Yeni Çalışan Ekle
+               </button>
+            )}
             <button 
-                onClick={() => setIsAddModalOpen(true)} // 👈 ARTIK MODAL AÇIYOR
-                className="bg-blue-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 hover:bg-blue-700 font-bold shadow-sm transition-all hover:shadow-md"
+               onClick={() => { exportEmployeesToExcel(employees); showSuccess('Çalışan listesi Excel olarak indirildi!'); }} 
+               className="bg-green-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 hover:bg-green-700 font-bold shadow-sm transition-all hover:shadow-md"
             >
-                <UserPlus className="w-5 h-5" /> Yeni Çalışan Ekle
+               <Download className="w-5 h-5" /> İndir
             </button>
-         )}
+         </div>
        </div>
 
        {/* ARAMA ÇUBUĞU */}

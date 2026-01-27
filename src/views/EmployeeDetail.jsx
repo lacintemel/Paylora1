@@ -6,6 +6,7 @@ import {
   FileText, XCircle, Clock 
 } from 'lucide-react';
 import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
+import { showSuccess, showError } from '../utils/toast';
 
 // 👆 DÜZELTME: 'Clock', 'FileText' ve 'XCircle' eksiksiz eklendi.
 
@@ -96,11 +97,11 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
         });
 
         if (error) throw error;
-        alert('Silme talebi Genel Müdüre iletildi.');
+        showSuccess('Silme talebi Genel Müdüre iletildi.');
         setDeleteStatus('pending');
 
     } catch (error) {
-        alert('HATA: ' + error.message);
+        showError('HATA: ' + error.message);
     }
   };
 
@@ -115,7 +116,7 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
         .eq('status', 'Pending');
 
       if (!error) {
-          alert("Talep geri çekildi.");
+          showSuccess("Talep geri çekildi.");
           setDeleteStatus('none');
       }
   };
@@ -131,7 +132,7 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
         .eq('status', 'Pending');
 
       if (!error) {
-          alert("Talep reddedildi. Personel aktif kalıyor.");
+          showSuccess("Talep reddedildi. Personel aktif kalıyor.");
           setDeleteStatus('none');
       }
   };
@@ -143,10 +144,10 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
     const { error: delError } = await supabase.from('employees').delete().eq('id', employee.id);
 
     if (delError) {
-        alert('Silme başarısız: ' + delError.message);
+        showError('Silme başarısız: ' + delError.message);
     } else {
         await supabase.from('deletion_requests').update({ status: 'Approved' }).eq('target_employee_id', employee.id);
-        alert('Çalışan başarıyla silindi.');
+        showSuccess('Çalışan başarıyla silindi.');
         onBack(); 
     }
   };
@@ -156,9 +157,9 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
       if (!confirm(`DİKKAT! ${employee.name} kalıcı olarak silinecek. Onaylıyor musunuz?`)) return;
       await supabase.from('deletion_requests').delete().eq('target_employee_id', employee.id);
       const { error } = await supabase.from('employees').delete().eq('id', employee.id);
-      if (error) alert('Silme hatası: ' + error.message);
+      if (error) showError('Silme hatası: ' + error.message);
       else {
-          alert('Personel başarıyla silindi.');
+          showSuccess('Personel başarıyla silindi.');
           onBack();
       }
   };

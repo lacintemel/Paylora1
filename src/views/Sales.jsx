@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { 
   TrendingUp, Plus, Search, Trash2, Edit3, X, 
-  DollarSign, Calendar, User, Package, Loader2, Save
+  DollarSign, Calendar, User, Package, Loader2, Save, Download
 } from 'lucide-react';
+import { exportSalesToExcel } from '../utils/exportUtils';
+import { showSuccess, showError } from '../utils/toast';
 
 export default function Sales({ currentUserId, userRole }) {
   const [sales, setSales] = useState([]);
@@ -97,20 +99,20 @@ export default function Sales({ currentUserId, userRole }) {
           .eq('id', editingSale.id);
 
         if (error) throw error;
-        alert('Satış güncellendi! ✅');
+        showSuccess('Satış güncellendi! ✅');
       } else {
         const { error } = await supabase
           .from('sales')
           .insert([saleData]);
 
         if (error) throw error;
-        alert('Satış eklendi! ✅');
+        showSuccess('Satış eklendi! ✅');
       }
 
       fetchSales();
       closeModal();
     } catch (error) {
-      alert('Hata: ' + error.message);
+      showError('Hata: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -126,10 +128,10 @@ export default function Sales({ currentUserId, userRole }) {
         .eq('id', id);
 
       if (error) throw error;
-      alert('Satış silindi! ✅');
+      showSuccess('Satış silindi! ✅');
       fetchSales();
     } catch (error) {
-      alert('Hata: ' + error.message);
+      showError('Hata: ' + error.message);
     }
   };
 
@@ -189,12 +191,24 @@ export default function Sales({ currentUserId, userRole }) {
           </h1>
           <p className="text-gray-500">Şirket satışlarını ve performansını takip edin.</p>
         </div>
-        <button 
-          onClick={() => openModal()}
-          className="bg-green-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 hover:bg-green-700 font-bold shadow-sm transition-all hover:shadow-md"
-        >
-          <Plus className="w-5 h-5" /> Yeni Satış Ekle
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => {
+              if (sales.length === 0) return showError('İndirilecek satış verisi yok');
+              exportSalesToExcel(sales);
+              showSuccess('Satışlar Excel olarak indirildi!');
+            }}
+            className="bg-blue-600 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 hover:bg-blue-700 font-bold shadow-sm transition-all hover:shadow-md"
+          >
+            <Download className="w-4 h-4" /> Excel
+          </button>
+          <button 
+            onClick={() => openModal()}
+            className="bg-green-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 hover:bg-green-700 font-bold shadow-sm transition-all hover:shadow-md"
+          >
+            <Plus className="w-5 h-5" /> Yeni Satış Ekle
+          </button>
+        </div>
       </div>
 
       {/* STATS CARDS */}

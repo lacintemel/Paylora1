@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
+import { Toaster } from 'react-hot-toast';
 
 // --- BİLEŞENLER (Layout) ---
 import Sidebar from './components/layout/Sidebar';
@@ -246,6 +247,9 @@ return (
            </div>
         </main>
       </div>
+      
+      {/* Toast Notification Container */}
+      <Toaster />
 
     </div>
   )};

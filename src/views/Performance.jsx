@@ -133,7 +133,7 @@ export default function Performance({ userRole, currentUserId }) {
             feedback,
             reviewer_id: (await supabase.auth.getUser()).data.user?.id
         };
-        const { error } = await supabase.from('performance_reviews').upsert(payload, { onConflict: 'employee_id, week_start_date' });
+        const { error } = await supabase.from('performance_reviews').upsert(payload);
         if (error) throw error;
         setEmployees(prev => prev.map(e => e.id === empId ? { ...e, review: { ...e.review, rating, feedback } } : e));
     } catch (error) { alert("Hata: " + error.message); }

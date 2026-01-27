@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase'; 
 import { 
   Calendar, Check, X, Clock, Plus, Filter, CheckCircle, XCircle, Loader2, 
-  Edit2, Trash2, Save // 👇 Yeni ikonlar eklendi
+  Edit2, Trash2, Save, Download // 👇 Download ikonu eklendi
 } from 'lucide-react';
 import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
+import { exportLeavesToPDF } from '../utils/exportUtils';
+import { showSuccess } from '../utils/toast';
 
 export default function LeaveManagement({ currentUserId, userRole }) {
   // --- STATE ---
@@ -61,7 +63,7 @@ export default function LeaveManagement({ currentUserId, userRole }) {
       .eq('id', id);
 
     if (error) {
-        alert("Güncelleme başarısız!");
+        showError("Güncelleme başarısız!");
         fetchLeaves(); 
     }
   };
@@ -81,11 +83,12 @@ export default function LeaveManagement({ currentUserId, userRole }) {
     }]);
 
     if (error) {
-      alert('Hata: ' + error.message);
+      showError('Hata: ' + error.message);
     } else {
       setIsModalOpen(false);
       setFormData({ type: 'Yıllık İzin', start: '', end: '', desc: '' });
       fetchLeaves();
+      showSuccess('İzin talebi başarıyla oluşturuldu!');
     }
     setSubmitting(false);
   };
@@ -96,8 +99,11 @@ export default function LeaveManagement({ currentUserId, userRole }) {
       
       const { error } = await supabase.from('leave_requests').delete().eq('id', id);
       
-      if(error) alert("Silme hatası: " + error.message);
-      else fetchLeaves();
+      if(error) showError("Silme hatası: " + error.message);
+      else {
+        showSuccess('İzin kaydı silindi!');
+        fetchLeaves();
+      }
   };
 
   // --- 5. 👇 YENİ: DÜZENLEME MODALINI AÇ ---
@@ -128,9 +134,9 @@ export default function LeaveManagement({ currentUserId, userRole }) {
       }).eq('id', editingData.id);
 
       if (error) {
-          alert('Güncelleme hatası: ' + error.message);
+          showError('Güncelleme hatası: ' + error.message);
       } else {
-          alert('Kayıt güncellendi! ✅');
+          showSuccess('Kayıt güncellendi! ✅');
           setIsEditModalOpen(false);
           setEditingData(null);
           fetchLeaves();
@@ -176,12 +182,20 @@ export default function LeaveManagement({ currentUserId, userRole }) {
                : 'İzin taleplerini buradan takip edebilirsin.'}
           </p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" /> İzin Talep Et
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" /> İzin Talep Et
+          </button>
+          <button 
+            onClick={() => { exportLeavesToPDF(filteredLeaves); showSuccess('İzin raporu PDF olarak indirildi!'); }}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700 transition-colors shadow-sm"
+          >
+            <Download className="w-4 h-4" /> İndir
+          </button>
+        </div>
       </div>
 
       {/* --- FİLTRE TABLARI --- */}

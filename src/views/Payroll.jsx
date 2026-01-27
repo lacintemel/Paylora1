@@ -4,9 +4,11 @@ import {
     DollarSign, Calendar, FileText, Plus, Search, Loader2, 
     CreditCard, XCircle, Printer, Clock, Save, Edit3,
     TrendingUp, TrendingDown, Briefcase, Building, PlusCircle, Trash2,
-    ChevronLeft, ChevronRight
+    ChevronLeft, ChevronRight, Download
 } from 'lucide-react';
 import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
+import { exportPayrollToPDF } from '../utils/exportUtils';
+import { showSuccess, showError } from '../utils/toast';
 
 export default function Payroll({ userRole, currentUserId }) {
   const [payrolls, setPayrolls] = useState([]);
@@ -131,8 +133,8 @@ export default function Payroll({ userRole, currentUserId }) {
           setPayrolls(prev => prev.map(p => p.id === id ? { ...p, status: newStatus } : p));
           if (selectedPayroll && selectedPayroll.id === id) setSelectedPayroll(prev => ({ ...prev, status: newStatus }));
           
-          alert(`İşlem Başarılı: ${newStatus === 'Paid' ? 'Ödendi' : 'İptal Edildi'}`);
-      } catch (error) { alert("Hata: " + error.message); }
+          showSuccess(`İşlem Başarılı: ${newStatus === 'Paid' ? 'Ödendi' : 'İptal Edildi'}`);
+      } catch (error) { showError("Hata: " + error.message); }
   };
   
   const handleSaveChanges = async () => {
@@ -151,10 +153,10 @@ export default function Payroll({ userRole, currentUserId }) {
           }).eq('id', selectedPayroll.id);
 
           if (error) throw error;
-          alert("Bordro Güncellendi! ✅");
+          showSuccess("Bordro Güncellendi! ✅");
           setIsDetailOpen(false);
           fetchPayrolls();
-      } catch (error) { alert("Hata: " + error.message); }
+      } catch (error) { showError("Hata: " + error.message); }
   };
 
   // Otomatik Oluşturucu
@@ -173,7 +175,8 @@ export default function Payroll({ userRole, currentUserId }) {
         }));
         await supabase.from('payrolls').upsert(newPayrolls, { onConflict: 'employee_id, period' });
         fetchPayrolls();
-    } catch (error) { alert("Hata: " + error.message); } finally { setLoading(false); }
+        showSuccess('Bordro başarıyla oluşturuldu!');
+    } catch (error) { showError("Hata: " + error.message); } finally { setLoading(false); }
   };
 
   // --- MODAL AÇMA VE VERİ HAZIRLAMA ---
@@ -218,6 +221,7 @@ export default function Payroll({ userRole, currentUserId }) {
          </div>
             <div className="flex gap-3 items-center">
                  {isManager && <button onClick={generatePayrollsForMonth} className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex gap-2"><Plus className="w-4 h-4"/> Oluştur</button>}
+                 <button onClick={() => { exportPayrollToPDF(filteredPayrolls, selectedMonth); showSuccess('Bordro raporu PDF olarak indirildi!'); }} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex gap-2"><Download className="w-4 h-4"/> İndir</button>
                  <div className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2 shadow-sm">
                      <button onClick={() => shiftMonth(-1)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" aria-label="Önceki ay">
                          <ChevronLeft className="w-4 h-4" />

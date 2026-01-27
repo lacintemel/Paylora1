@@ -5,6 +5,7 @@ import {
   Camera, Upload, Loader2, Mail, CheckCircle, Download, AlertTriangle
 } from 'lucide-react';
 import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
+import { showSuccess, showError } from '../utils/toast';
 
 export default function Settings({ userRole, currentUserId, onUpdate }) {
   const [activeTab, setActiveTab] = useState('profile');
@@ -79,10 +80,10 @@ export default function Settings({ userRole, currentUserId, onUpdate }) {
       setCompanySettings(prev => ({ ...prev, company_logo: publicUrl }));
       if (onUpdate) onUpdate(); 
 
-      alert("Logo güncellendi! Sol menüde görebilirsiniz. ✅");
+      showSuccess("Logo güncellendi! Sol menüde görebilirsiniz. ✅");
 
     } catch (error) { 
-      alert('Hata: ' + error.message); 
+      showError('Hata: ' + error.message); 
     } finally { 
       setUploading(false); 
     }

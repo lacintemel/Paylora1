@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { Play, Square, Clock, CalendarCheck, CheckCircle2, History } from 'lucide-react';
+import { showSuccess, showError } from '../utils/toast';
 
 export default function TimeTracking({ currentUserId, userRole }) {
   const [logs, setLogs] = useState([]);
@@ -88,9 +89,10 @@ export default function TimeTracking({ currentUserId, userRole }) {
       setTodayLogId(data.id);
       setStartTime(now);
       setIsCheckedIn(true);
-      fetchLogs(); 
+      fetchLogs();
+      showSuccess('Günaydın! Mesaiye başladınız.');
     } catch (err) {
-      alert("Giriş hatası: " + err.message);
+      showError("Giriş hatası: " + err.message);
     }
   };
 
@@ -122,8 +124,9 @@ export default function TimeTracking({ currentUserId, userRole }) {
       setIsCheckedIn(false);
       setStartTime(null);
       fetchLogs();
+      showSuccess('Çıkış yapıldı! İyi günler.');
     } catch (err) {
-      alert("Çıkış hatası: " + err.message);
+      showError("Çıkış hatası: " + err.message);
     }
   };
 
