@@ -13,6 +13,20 @@ export default function Sales({ currentUserId, userRole }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
 
+  // Erişim kontrolü
+  const isManager = ['general_manager', 'hr'].includes(userRole);
+  
+  if (!isManager) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
+        <div className="bg-red-50 p-8 rounded-2xl border border-red-100 text-center max-w-md">
+          <h3 className="text-xl font-bold text-red-600 mb-2">Erişim Reddedildi</h3>
+          <p className="text-gray-600">Bu sayfayı görüntüleme yetkiniz bulunmamaktadır. Satış yönetimi sadece İK ve Genel Müdürlük tarafından kullanılabilir.</p>
+        </div>
+      </div>
+    );
+  }
+
   const [formData, setFormData] = useState({
     product_name: '',
     amount: '',
@@ -20,8 +34,6 @@ export default function Sales({ currentUserId, userRole }) {
     employee_id: '',
     notes: ''
   });
-
-  const isManager = ['general_manager', 'hr'].includes(userRole);
 
   useEffect(() => {
     fetchSales();
