@@ -3,7 +3,7 @@ import { supabase } from '../supabase';
 import { 
   Star, ChevronLeft, ChevronRight, 
   BarChart2, Clock, Calendar, Sparkles, Loader2,
-  TrendingUp, DollarSign, Award
+  TrendingUp, DollarSign, Award, X, TrendingDown, Minus
 } from 'lucide-react';
 import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
 
@@ -11,6 +11,7 @@ export default function Performance({ userRole, currentUserId }) {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(null);
+  const [analysisResult, setAnalysisResult] = useState(null);
 
   const getMonday = (d) => {
     d = new Date(d);
@@ -143,14 +144,54 @@ export default function Performance({ userRole, currentUserId }) {
   const analyzeEmployee = async (empId, empName) => {
     setAnalyzing(empId);
     try {
-        const { data: allReviews } = await supabase.from('performance_reviews').select('rating, week_start_date').eq('employee_id', empId);
+        const { data: allReviews } = await supabase.from('performance_reviews').select('rating, week_start_date').eq('employee_id', empId).order('week_start_date', { ascending: true });
         if (!allReviews || allReviews.length < 3) {
             alert("⚠️ Yetersiz Veri: Analiz için en az 3 haftalık puanlama verisi gerekli.");
             setAnalyzing(null); return;
         }
         
-        // AI Mantığı (Kısa versiyonu, analiz kodun çalışır durumda)
-        alert(`Analiz tamamlandı: ${empName} verileri incelendi.`); 
+        // Son 8 haftalık veriyi al
+        const recentReviews = allReviews.slice(-8);
+        const ratings = recentReviews.map(r => r.rating);
+        const avgRating = (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1);
+        
+        // Trend hesapla
+        const firstHalf = ratings.slice(0, Math.floor(ratings.length / 2));
+        const secondHalf = ratings.slice(Math.floor(ratings.length / 2));
+        const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+        const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+        const trendDirection = secondAvg > firstAvg ? 'yükseliş' : secondAvg < firstAvg ? 'düşüş' : 'sabit';
+        
+        // AI Önerileri
+        let recommendations = [];
+        if (avgRating >= 4.5) {
+            recommendations = [
+                "Mükemmel performans sergiliyor, liderlik fırsatları sunulabilir.",
+                "Yüksek potansiyelli çalışan, mentorluk rolü verilebilir.",
+                "Ödüllendirme ve terfi değerlendirmesi yapılmalı."
+            ];
+        } else if (avgRating >= 3.5) {
+            recommendations = [
+                "İyi performans gösteriyor, gelişim alanları belirlenebilir.",
+                "Hedef odaklı eğitim programları önerilebilir.",
+                "Düzenli geri bildirimle performans artırılabilir."
+            ];
+        } else {
+            recommendations = [
+                "Performans gelişim planı oluşturulmalı.",
+                "Birebir koçluk ve mentorluk desteği sağlanmalı.",
+                "Hedeflerin netleştirilmesi ve destek artırılmalı."
+            ];
+        }
+        
+        setAnalysisResult({
+            empName,
+            avgRating,
+            trend: trendDirection,
+            trendIcon: trendDirection === 'yükseliş' ? 'up' : trendDirection === 'düşüş' ? 'down' : 'stable',
+            weeklyData: recentReviews,
+            recommendations
+        });
 
     } catch (error) { console.error(error); } finally { setAnalyzing(null); }
   };
@@ -291,6 +332,117 @@ export default function Performance({ userRole, currentUserId }) {
              ))
           )}
        </div>
+
+       {/* AI Analiz Modal */}
+       {analysisResult && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+             <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-300">
+                
+                {/* Header */}
+                <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white rounded-t-2xl flex justify-between items-center">
+                   <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                         <Sparkles className="w-6 h-6"/>
+                      </div>
+                      <div>
+                         <h2 className="text-2xl font-bold">{analysisResult.empName}</h2>
+                         <p className="text-purple-100 text-sm">AI Performans Analizi</p>
+                      </div>
+                   </div>
+                   <button onClick={() => setAnalysisResult(null)} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
+                      <X className="w-6 h-6"/>
+                   </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 space-y-6">
+                   
+                   {/* Özet Kartlar */}
+                   <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
+                         <div className="text-xs text-blue-600 font-bold mb-1 uppercase tracking-wider">Ortalama Puan</div>
+                         <div className="text-3xl font-black text-blue-700 flex items-center gap-2">
+                            {analysisResult.avgRating}
+                            <Star className="w-6 h-6 fill-yellow-400 text-yellow-400"/>
+                         </div>
+                         <div className="text-xs text-blue-500 mt-1">Son 8 hafta ortalaması</div>
+                      </div>
+                      
+                      <div className={`p-4 rounded-xl border ${
+                         analysisResult.trendIcon === 'up' ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200' :
+                         analysisResult.trendIcon === 'down' ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200' :
+                         'bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200'
+                      }`}>
+                         <div className={`text-xs font-bold mb-1 uppercase tracking-wider ${
+                            analysisResult.trendIcon === 'up' ? 'text-green-600' :
+                            analysisResult.trendIcon === 'down' ? 'text-red-600' : 'text-gray-600'
+                         }`}>Performans Trendi</div>
+                         <div className={`text-3xl font-black flex items-center gap-2 ${
+                            analysisResult.trendIcon === 'up' ? 'text-green-700' :
+                            analysisResult.trendIcon === 'down' ? 'text-red-700' : 'text-gray-700'
+                         }`}>
+                            {analysisResult.trendIcon === 'up' && <TrendingUp className="w-8 h-8"/>}
+                            {analysisResult.trendIcon === 'down' && <TrendingDown className="w-8 h-8"/>}
+                            {analysisResult.trendIcon === 'stable' && <Minus className="w-8 h-8"/>}
+                            <span className="capitalize">{analysisResult.trend}</span>
+                         </div>
+                      </div>
+                   </div>
+
+                   {/* Haftalık Trend Grafiği */}
+                   <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+                      <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                         <BarChart2 className="w-5 h-5 text-purple-600"/> Haftalık Performans Grafiği
+                      </h3>
+                      <div className="flex items-end gap-2 h-40">
+                         {analysisResult.weeklyData.map((review, idx) => {
+                            const heightPercent = (review.rating / 5) * 100;
+                            return (
+                               <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                                  <div className="text-xs font-bold text-gray-600">{review.rating}</div>
+                                  <div 
+                                     className={`w-full rounded-t-lg transition-all ${
+                                        review.rating >= 4 ? 'bg-green-500' :
+                                        review.rating >= 3 ? 'bg-yellow-500' : 'bg-red-500'
+                                     }`}
+                                     style={{ height: `${heightPercent}%` }}
+                                  ></div>
+                                  <div className="text-[9px] text-gray-400 font-medium text-center">
+                                     {new Date(review.week_start_date).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' })}
+                                  </div>
+                               </div>
+                            );
+                         })}
+                      </div>
+                   </div>
+
+                   {/* AI Önerileri */}
+                   <div className="bg-gradient-to-br from-purple-50 to-indigo-50 p-5 rounded-xl border border-purple-200">
+                      <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                         <Sparkles className="w-5 h-5 text-purple-600"/> AI Önerileri
+                      </h3>
+                      <ul className="space-y-2">
+                         {analysisResult.recommendations.map((rec, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-gray-700">
+                               <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-2 shrink-0"></div>
+                               <span className="text-sm leading-relaxed">{rec}</span>
+                            </li>
+                         ))}
+                      </ul>
+                   </div>
+
+                   {/* Kapatma Butonu */}
+                   <button 
+                      onClick={() => setAnalysisResult(null)}
+                      className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-lg font-bold hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl active:scale-95"
+                   >
+                      Kapat
+                   </button>
+
+                </div>
+             </div>
+          </div>
+       )}
     </div>
   );
 }
