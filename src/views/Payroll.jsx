@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { 
-  DollarSign, Calendar, FileText, Plus, Search, Loader2, 
-  CreditCard, XCircle, Printer, Clock, Save, Edit3,
-  TrendingUp, TrendingDown, Briefcase, Building, PlusCircle, Trash2
+    DollarSign, Calendar, FileText, Plus, Search, Loader2, 
+    CreditCard, XCircle, Printer, Clock, Save, Edit3,
+    TrendingUp, TrendingDown, Briefcase, Building, PlusCircle, Trash2,
+    ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
 
-export default function Payroll({ userRole }) {
+export default function Payroll({ userRole, currentUserId }) {
   const [payrolls, setPayrolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); 
@@ -45,17 +46,35 @@ export default function Payroll({ userRole }) {
 
   useEffect(() => { fetchPayrolls(); }, [selectedMonth]);
 
+  const shiftMonth = (delta) => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const date = new Date(year, month - 1 + delta, 1);
+    const nextYear = date.getFullYear();
+    const nextMonth = String(date.getMonth() + 1).padStart(2, '0');
+    setSelectedMonth(`${nextYear}-${nextMonth}`);
+  };
+
   const fetchPayrolls = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('payrolls')
         .select(`*, employees ( id, name, avatar, department, position, salary )`)
         .eq('period', selectedMonth)
-        .order('status', { ascending: false }); // Bekleyenler önce
+        .order('status', { ascending: false });
+
+      if (!isManager && currentUserId) {
+        query = query.eq('employee_id', currentUserId);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       setPayrolls(data || []);
-    } catch (error) { console.error("Veri hatası:", error); } finally { setLoading(false); }
+    } catch (error) { 
+      console.error("Veri hatası:", error); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   // --- 🧮 HESAPLAMA MOTORLARI ---
@@ -197,10 +216,21 @@ export default function Payroll({ userRole }) {
             <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><DollarSign className="w-6 h-6 text-green-600"/> Bordro Yönetimi</h1>
             <p className="text-gray-500 text-sm">{selectedMonth} Dönemi</p>
          </div>
-         <div className="flex gap-3">
-             <div className="relative"><Calendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400"/><input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="pl-9 pr-4 py-2 border rounded-xl text-sm font-bold"/></div>
-             {isManager && <button onClick={generatePayrollsForMonth} className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex gap-2"><Plus className="w-4 h-4"/> Oluştur</button>}
-         </div>
+            <div className="flex gap-3 items-center">
+                 {isManager && <button onClick={generatePayrollsForMonth} className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex gap-2"><Plus className="w-4 h-4"/> Oluştur</button>}
+                 <div className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2 shadow-sm">
+                     <button onClick={() => shiftMonth(-1)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" aria-label="Önceki ay">
+                         <ChevronLeft className="w-4 h-4" />
+                     </button>
+                     <div className="relative">
+                         <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-gray-400"/>
+                         <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="pl-9 pr-4 py-2 border rounded-xl text-sm font-bold" />
+                     </div>
+                     <button onClick={() => shiftMonth(1)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" aria-label="Sonraki ay">
+                         <ChevronRight className="w-4 h-4" />
+                     </button>
+                 </div>
+            </div>
       </div>
 
       <div className="relative"><Search className="absolute left-4 top-3.5 w-5 h-5 text-gray-400"/><input type="text" placeholder="Personel ara..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white border rounded-xl"/></div>
@@ -265,8 +295,12 @@ export default function Payroll({ userRole }) {
                                         </button>
                                     )
                                 )}
-                                <button onClick={() => openDetailModal(payroll)} className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg border border-transparent hover:border-blue-100">
-                                    <Edit3 className="w-4 h-4"/>
+                                <button onClick={() => openDetailModal(payroll)} className={`p-2 rounded-lg border border-transparent ${
+                                  isManager 
+                                    ? 'text-blue-600 hover:bg-blue-50 hover:border-blue-100' 
+                                    : 'text-gray-600 hover:bg-gray-50 hover:border-gray-100'
+                                }`}>
+                                    {isManager ? <Edit3 className="w-4 h-4"/> : <FileText className="w-4 h-4"/>}
                                 </button>
                             </div>
                         </td>
@@ -313,12 +347,16 @@ export default function Payroll({ userRole }) {
                         <div className="flex items-center gap-2 font-bold text-blue-800">
                             <DollarSign className="w-5 h-5"/> Temel Brüt Maaş
                         </div>
-                        <input 
-                            type="number" disabled={!isManager} 
-                            value={baseSalary} 
-                            onChange={(e) => setBaseSalary(e.target.value)} 
-                            className="w-40 text-right font-bold text-lg bg-white border border-blue-200 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
+                        {isManager ? (
+                          <input 
+                              type="number"
+                              value={baseSalary} 
+                              onChange={(e) => setBaseSalary(e.target.value)} 
+                              className="w-40 text-right font-bold text-lg bg-white border border-blue-200 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        ) : (
+                          <span className="w-40 text-right font-bold text-lg text-blue-800">${parseFloat(baseSalary).toLocaleString()}</span>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -334,29 +372,16 @@ export default function Payroll({ userRole }) {
                             
                             <div className="space-y-2">
                                 {earningsList.map((item, index) => (
-                                    <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100 group">
-                                        {item.isCustom ? (
-                                            <input type="text" placeholder="Kalem Adı..." value={item.name} onChange={(e) => updateItem('earnings', index, 'name', e.target.value)} className="flex-1 bg-white border border-gray-200 rounded px-2 py-1 text-sm font-medium"/>
-                                        ) : (
-                                            <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
-                                        )}
-
-                                        <input type="number" disabled={!isManager} value={item.value} onChange={(e) => updateItem('earnings', index, 'value', e.target.value)} className="w-20 bg-white border border-gray-200 rounded px-2 py-1 text-sm text-right font-bold text-green-600 focus:outline-none focus:border-green-500"/>
-
-                                        <button disabled={!isManager} onClick={() => updateItem('earnings', index, 'type', item.type === 'fixed' ? 'percent' : 'fixed')} className={`w-8 h-8 flex items-center justify-center rounded font-bold text-xs ${item.type === 'percent' ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-600'}`}>
-                                            {item.type === 'percent' ? '%' : '₺'}
-                                        </button>
-
-                                        {isManager && item.isCustom && (
-                                            <button onClick={() => removeItem('earnings', index)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
-                                        )}
+                                    <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                        <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
+                                        <span className="w-20 text-right text-sm font-bold text-green-600">
+                                          {item.type === 'percent' ? `${item.value}%` : `$${parseFloat(item.value).toLocaleString()}`}
+                                        </span>
+                                        <span className="w-8 text-center text-xs font-bold text-gray-600">
+                                          {item.type === 'percent' ? '%' : '₺'}
+                                        </span>
                                     </div>
                                 ))}
-                                {isManager && (
-                                    <button onClick={() => addItem('earnings')} className="w-full py-2 border border-dashed border-green-300 text-green-600 rounded-lg text-sm font-bold hover:bg-green-50 flex items-center justify-center gap-2">
-                                        <PlusCircle className="w-4 h-4"/> Diğer Ekle
-                                    </button>
-                                )}
                             </div>
                         </div>
 
@@ -372,28 +397,15 @@ export default function Payroll({ userRole }) {
                             <div className="space-y-2">
                                 {deductionsList.map((item, index) => (
                                     <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                        {item.isCustom ? (
-                                            <input type="text" placeholder="Kalem Adı..." value={item.name} onChange={(e) => updateItem('deductions', index, 'name', e.target.value)} className="flex-1 bg-white border border-gray-200 rounded px-2 py-1 text-sm font-medium"/>
-                                        ) : (
-                                            <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
-                                        )}
-
-                                        <input type="number" disabled={!isManager} value={item.value} onChange={(e) => updateItem('deductions', index, 'value', e.target.value)} className="w-20 bg-white border border-gray-200 rounded px-2 py-1 text-sm text-right font-bold text-red-600 focus:outline-none focus:border-red-500"/>
-
-                                        <button disabled={!isManager} onClick={() => updateItem('deductions', index, 'type', item.type === 'fixed' ? 'percent' : 'fixed')} className={`w-8 h-8 flex items-center justify-center rounded font-bold text-xs ${item.type === 'percent' ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-600'}`}>
-                                            {item.type === 'percent' ? '%' : '₺'}
-                                        </button>
-
-                                        {isManager && item.isCustom && (
-                                            <button onClick={() => removeItem('deductions', index)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
-                                        )}
+                                        <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
+                                        <span className="w-20 text-right text-sm font-bold text-red-600">
+                                          {item.type === 'percent' ? `${item.value}%` : `$${parseFloat(item.value).toLocaleString()}`}
+                                        </span>
+                                        <span className="w-8 text-center text-xs font-bold text-gray-600">
+                                          {item.type === 'percent' ? '%' : '₺'}
+                                        </span>
                                     </div>
                                 ))}
-                                {isManager && (
-                                    <button onClick={() => addItem('deductions')} className="w-full py-2 border border-dashed border-red-300 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50 flex items-center justify-center gap-2">
-                                        <PlusCircle className="w-4 h-4"/> Diğer Ekle
-                                    </button>
-                                )}
                             </div>
                         </div>
                     </div>

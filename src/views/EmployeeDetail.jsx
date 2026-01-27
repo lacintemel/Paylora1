@@ -315,9 +315,9 @@ export default function EmployeeDetail({ employee, onBack, userRole }) {
          <div className="flex border-b border-gray-100 overflow-x-auto">
             {[
               { id: 'overview', label: 'Genel Bakış', icon: FileText, show: true },
-              { id: 'leaves', label: 'İzin Geçmişi', icon: Calendar, show: true },
+                     { id: 'leaves', label: 'İzin Geçmişi', icon: Calendar, show: userRole !== 'employee' },
               { id: 'payroll', label: 'Maaş Geçmişi', icon: CreditCard, show: isAuthorized },
-              { id: 'logs', label: 'Giriş/Çıkışlar', icon: Clock, show: true },
+                     { id: 'logs', label: 'Giriş/Çıkışlar', icon: Clock, show: userRole !== 'employee' },
             ].filter(t => t.show).map(tab => (
               <button
                 key={tab.id}
