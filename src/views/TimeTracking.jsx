@@ -28,7 +28,7 @@ export default function TimeTracking({ currentUserId, userRole }) {
       .eq('date', today)
       .order('created_at', { ascending: false }) // En son kaydı al
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (data) {
       setTodayLogId(data.id);

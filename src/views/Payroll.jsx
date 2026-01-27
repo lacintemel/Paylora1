@@ -173,7 +173,7 @@ export default function Payroll({ userRole, currentUserId }) {
             deductions_details: DEFAULT_DEDUCTIONS, 
             net_pay: emp.salary * 0.70 
         }));
-        await supabase.from('payrolls').upsert(newPayrolls, { onConflict: 'employee_id, period' });
+        await supabase.from('payrolls').upsert(newPayrolls);
         fetchPayrolls();
         showSuccess('Bordro başarıyla oluşturuldu!');
     } catch (error) { showError("Hata: " + error.message); } finally { setLoading(false); }
