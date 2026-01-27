@@ -3,7 +3,7 @@ import { supabase } from '../supabase';
 import { 
   Star, ChevronLeft, ChevronRight, 
   BarChart2, Clock, Calendar, Sparkles, Loader2,
-  TrendingUp
+  TrendingUp, DollarSign, Award
 } from 'lucide-react';
 import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
 
@@ -47,6 +47,14 @@ export default function Performance({ userRole, currentUserId }) {
       
       const { data: reviews } = await supabase.from('performance_reviews').select('*').eq('week_start_date', selectedWeek);
 
+      // Satış verileri (bu hafta ve toplam)
+      const { data: allSales } = await supabase.from('sales').select('amount, sale_date, employee_id');
+      
+      const weeklySales = (allSales || []).filter(s => {
+        const saleDate = new Date(s.sale_date);
+        return saleDate >= startOfWeek && saleDate <= endOfWeek;
+      });
+
       // D) Hesaplama
       const analyzedData = (emps || []).map(emp => {
           
@@ -54,6 +62,7 @@ export default function Performance({ userRole, currentUserId }) {
 
           // 1. BU HAFTA Kaç Gün Yok? (HEPSİ DAHİL: Yıllık, Hastalık, Mazeret)
           let daysOnLeaveThisWeek = 0;
+          let leaveTypesThisWeek = [];
           employeeLeaves.forEach(l => {
               const lStart = new Date(l.start_date);
               const lEnd = new Date(l.end_date);
@@ -67,19 +76,29 @@ export default function Performance({ userRole, currentUserId }) {
               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
               
               daysOnLeaveThisWeek += diffDays;
+              if (!leaveTypesThisWeek.includes(l.leave_type)) {
+                leaveTypesThisWeek.push(l.leave_type);
+              }
           });
 
           // 2. YILLIK BAKİYE (SADECE 'Yıllık İzin' OLANLAR DÜŞER)
-          // Veritabanındaki isme tam olarak uyumlu: 'Yıllık İzin'
           const totalUsedAnnualDays = employeeLeaves
-            .filter(l => { // ✅ Tek filter olacak
-      const type = (l.leave_type || '').toLowerCase();
-      return type.includes('annual') || type.includes('yıllık');
-  })
+            .filter(l => {
+              const type = (l.leave_type || '').toLowerCase();
+              return type.includes('annual') || type.includes('yıllık');
+            })
             .reduce((acc, curr) => acc + (curr.days || 0), 0);
           
           const annualRights = emp.annual_leave_days || 14; 
           const remainingLeave = annualRights - totalUsedAnnualDays;
+
+          // 3. SATIŞ ANALİZİ (Bu hafta ve toplam)
+          const empWeeklySales = weeklySales.filter(s => s.employee_id === emp.id);
+          const weekSalesAmount = empWeeklySales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+          const weekSalesCount = empWeeklySales.length;
+
+          const empTotalSales = (allSales || []).filter(s => s.employee_id === emp.id);
+          const totalSalesAmount = empTotalSales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
 
           // Diğer veriler
           const daysWorkedThisWeek = (weeklyLogs || []).filter(l => l.employee_id === emp.id).length;
@@ -89,9 +108,13 @@ export default function Performance({ userRole, currentUserId }) {
               ...emp,
               stats: { 
                   daysWorked: daysWorkedThisWeek, 
-                  leaveThisWeek: daysOnLeaveThisWeek, 
+                  leaveThisWeek: daysOnLeaveThisWeek,
+                  leaveTypes: leaveTypesThisWeek,
                   remainingLeave: remainingLeave,     
-                  totalRights: annualRights       
+                  totalRights: annualRights,
+                  weekSales: weekSalesAmount,
+                  weekSalesCount: weekSalesCount,
+                  totalSales: totalSalesAmount
               },
               review: review || { rating: 0, feedback: '' }
           };
@@ -190,16 +213,56 @@ export default function Performance({ userRole, currentUserId }) {
                          <div className="text-[9px] text-gray-400 mt-1">Bu Hafta</div>
                       </div>
 
-                      <div className="flex-1 text-center">
+                      <div className="flex-1 text-center border-r border-gray-200">
                          <div className="text-[10px] text-gray-400 uppercase font-extrabold mb-1 tracking-wider">İzinli</div>
-                         <div className={`text-xl font-bold flex items-center justify-center gap-1.5 ${emp.stats.leaveThisWeek > 0 ? 'text-orange-600' : 'text-gray-800'}`}>
-                             <Calendar className="w-4 h-4 text-orange-500"/> {emp.stats.leaveThisWeek} Gün
+                         <div className={`text-xl font-bold flex items-center justify-center gap-1.5 ${
+                           emp.stats.leaveThisWeek > 0 ? 'text-orange-600' : 'text-gray-800'
+                         }`}>
+                             <Calendar className="w-4 h-4 text-orange-500"/> {emp.stats.leaveThisWeek}
                          </div>
-                         <div className="text-[9px] text-gray-500 mt-1 font-medium bg-white/50 rounded px-1">
-                            Yıllık Kalan: <span className={`${emp.stats.remainingLeave < 3 ? 'text-red-600 font-bold' : 'text-gray-700'}`}>{emp.stats.remainingLeave}</span>
+                         <div className="text-[9px] text-gray-500 mt-1 font-medium">
+                            {emp.stats.leaveTypes?.length > 0 ? (
+                              <span className="bg-orange-50 text-orange-600 px-1 rounded">
+                                {emp.stats.leaveTypes.join(', ')}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
                          </div>
                       </div>
 
+                      <div className="flex-1 text-center">
+                         <div className="text-[10px] text-gray-400 uppercase font-extrabold mb-1 tracking-wider">Satış</div>
+                         <div className="text-xl font-bold text-green-600 flex items-center justify-center gap-1.5">
+                             <DollarSign className="w-4 h-4"/> {emp.stats?.weekSalesCount || 0}
+                         </div>
+                         <div className="text-[9px] text-gray-500 mt-1">
+                           {emp.stats?.weekSalesCount > 0 ? (
+                             <span className="text-gray-600">Adet bu hafta</span>
+                           ) : (
+                             <span className="text-gray-400">Bu hafta yok</span>
+                           )}
+                         </div>
+                      </div>
+
+                   </div>
+
+                   {/* Ek Bilgi Paneli - Yıllık İzin ve Toplam Satış */}
+                   <div className="w-full lg:w-auto flex gap-3 bg-gradient-to-r from-blue-50 to-purple-50 p-3 rounded-xl border border-blue-100">
+                      <div className="flex-1 text-center">
+                         <div className="text-[9px] text-blue-400 uppercase font-bold mb-1">Yıllık Kalan</div>
+                         <div className={`text-lg font-black ${
+                           emp.stats.remainingLeave < 3 ? 'text-red-600' : 'text-blue-600'
+                         }`}>
+                            {emp.stats.remainingLeave}/{emp.stats.totalRights}
+                         </div>
+                      </div>
+                      <div className="flex-1 text-center border-l border-blue-200 pl-3">
+                         <div className="text-[9px] text-purple-400 uppercase font-bold mb-1">Toplam Satış</div>
+                         <div className="text-lg font-black text-purple-600 flex items-center justify-center gap-1">
+                            <Award className="w-4 h-4"/> ${(emp.stats?.totalSales || 0).toLocaleString()}
+                         </div>
+                      </div>
                    </div>
 
                    <div className="flex-1 w-full space-y-3">

@@ -52,7 +52,7 @@ export const navItems = [
     id: 'sales',
     label: 'Satışlar',
     icon: TrendingUp,
-    allowedRoles: [ROLES.GM, ROLES.HR, ROLES.EMPLOYEE]
+    allowedRoles: [ROLES.GM, ROLES.HR]
   },
   {
     id: 'recruitment',

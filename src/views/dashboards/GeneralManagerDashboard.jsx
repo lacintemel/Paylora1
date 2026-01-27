@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase'; 
 import { 
   TrendingUp, Users, DollarSign, Activity, Briefcase, 
-  ArrowUpRight, CreditCard, PieChart
+  ArrowUpRight, CreditCard, PieChart, Calendar
 } from 'lucide-react';
 import DashboardAnnouncements from '../../components/DashboardAnnouncements';
 
@@ -11,8 +11,13 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
     totalEmployees: 0,
     monthlyCost: 0,
     pendingPayroll: 0,
-    avgSalary: 0
+    avgSalary: 0,
+    monthSales: 0,
+    totalSales: 0,
+    lastMonthSales: 0,
+    salesChange: 0
   });
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,12 +43,64 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
       const totalCost = payrolls?.reduce((sum, p) => sum + Number(p.net_pay), 0) || 0;
       const pendingCount = payrolls?.filter(p => p.status === 'Pending').length || 0;
 
+      // 3. Satış İstatistikleri
+      const { data: allSales, error: salesError } = await supabase
+        .from('sales')
+        .select('amount, sale_date');
+      
+      if (salesError) throw salesError;
+
+      const totalSalesAmount = allSales?.reduce((sum, s) => sum + Number(s.amount), 0) || 0;
+      const currentMonthSales = allSales?.filter(s => 
+        s.sale_date?.startsWith(currentPeriod)
+      ).reduce((sum, s) => sum + Number(s.amount), 0) || 0;
+
+      // Geçen ay hesaplama
+      const now = new Date();
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1);
+      const lastMonthPeriod = lastMonth.toISOString().slice(0, 7);
+      
+      const lastMonthSalesAmount = allSales?.filter(s => 
+        s.sale_date?.startsWith(lastMonthPeriod)
+      ).reduce((sum, s) => sum + Number(s.amount), 0) || 0;
+
+      // Yüzde değişim hesaplama
+      let changePercent = 0;
+      if (lastMonthSalesAmount > 0) {
+        changePercent = ((currentMonthSales - lastMonthSalesAmount) / lastMonthSalesAmount) * 100;
+      } else if (currentMonthSales > 0) {
+        changePercent = 100; // Geçen ay 0, bu ay var = %100 artış
+      }
+
       setStats({
         totalEmployees: totalEmps,
         monthlyCost: totalCost,
         pendingPayroll: pendingCount,
-        avgSalary: Math.floor(avgSal)
+        avgSalary: Math.floor(avgSal),
+        monthSales: currentMonthSales,
+        totalSales: totalSalesAmount,
+        lastMonthSales: lastMonthSalesAmount,
+        salesChange: changePercent
       });
+
+      // 4. Yaklaşan Etkinlikler (Sonraki 7 gün)
+      const today = new Date().toISOString().split('T')[0];
+      const nextWeek = new Date();
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      const nextWeekStr = nextWeek.toISOString().split('T')[0];
+
+      const { data: events, error: eventsError } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .gte('start_date', today)
+        .lte('start_date', nextWeekStr)
+        .neq('status', 'Cancelled')
+        .order('start_date', { ascending: true })
+        .limit(3);
+      
+      if (!eventsError) {
+        setUpcomingEvents(events || []);
+      }
 
     } catch (error) {
       console.error("Dashboard Veri Hatası:", error);
@@ -66,11 +123,16 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
         </div>
       </div>
 
-      {/* KPI KARTLARI (Senin Kodun) */}
+      {/* KPI KARTLARI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between h-32">
+        {/* Birleştirilmiş Maaş Widget'ı */}
+        <div onClick={() => onNavigate('payroll')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between h-32 cursor-pointer hover:border-green-200 transition-colors">
            <div className="flex justify-between items-start">
-              <div><p className="text-sm font-bold text-gray-500">Aylık Maaş Gideri</p><h3 className="text-2xl font-bold text-gray-800 mt-1">${loading ? '...' : stats.monthlyCost.toLocaleString()}</h3></div>
+              <div>
+                <p className="text-sm font-bold text-gray-500">Maaş Giderleri</p>
+                <h3 className="text-2xl font-bold text-gray-800 mt-1">${loading ? '...' : stats.monthlyCost.toLocaleString()}</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">Ort. yıllık: ${loading ? '...' : stats.avgSalary.toLocaleString()}</p>
+              </div>
               <div className="p-2 bg-green-50 rounded-lg text-green-600"><DollarSign className="w-5 h-5" /></div>
            </div>
            {stats.pendingPayroll > 0 && (<p className="text-xs font-bold text-orange-500 flex items-center gap-1"><Activity className="w-3 h-3"/> {stats.pendingPayroll} ödeme bekliyor</p>)}
@@ -84,20 +146,44 @@ export default function GeneralManagerDashboard({ onNavigate, currentUser, userR
            <p className="text-xs text-green-600 flex items-center gap-1"><ArrowUpRight className="w-3 h-3"/> Geçen aya göre stabil</p>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between h-32">
-           <div className="flex justify-between items-start">
-              <div><p className="text-sm font-bold text-gray-500">Ort. Yıllık Maaş</p><h3 className="text-2xl font-bold text-gray-800 mt-1">${loading ? '...' : stats.avgSalary.toLocaleString()}</h3></div>
-              <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><Briefcase className="w-5 h-5" /></div>
+        {/* Yaklaşan Etkinlikler Widget'ı */}
+        <div onClick={() => onNavigate('planner')} className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between h-32 cursor-pointer hover:border-purple-200 transition-colors overflow-hidden">
+           <div className="flex justify-between items-start mb-2">
+              <div><p className="text-sm font-bold text-gray-500">Yaklaşan Etkinlikler</p></div>
+              <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><Calendar className="w-5 h-5" /></div>
            </div>
-           <p className="text-xs text-gray-400">Sektör ortalamasında</p>
+           <div className="space-y-1 flex-1 overflow-hidden">
+             {loading ? (
+               <p className="text-xs text-gray-400">Yükleniyor...</p>
+             ) : upcomingEvents.length > 0 ? (
+               upcomingEvents.slice(0, 2).map((event, idx) => (
+                 <div key={idx} className="text-[10px] text-gray-600 truncate">
+                   <span className="font-bold">{new Date(event.start_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}:</span> {event.title}
+                 </div>
+               ))
+             ) : (
+               <p className="text-xs text-gray-400">Etkinlik yok</p>
+             )}
+           </div>
+           <p className="text-xs text-purple-600 flex items-center gap-1 mt-1"><ArrowUpRight className="w-3 h-3"/> Detaylar için tıklayın</p>
         </div>
 
-        <div className="bg-gradient-to-br from-gray-900 to-gray-800 text-white p-6 rounded-xl shadow-lg flex flex-col justify-between h-32">
+        <div className="bg-gradient-to-br from-gray-900 to-gray-800 text-white p-6 rounded-xl shadow-lg flex flex-col justify-between h-32 cursor-pointer hover:shadow-xl transition-all" onClick={() => onNavigate('sales')}>
            <div className="flex justify-between items-start">
-              <div><p className="text-sm font-bold text-gray-400">Tahmini Ciro</p><h3 className="text-2xl font-bold mt-1">$450,000</h3></div>
+              <div><p className="text-sm font-bold text-gray-400">Bu Ayki Satışlarımız</p><h3 className="text-2xl font-bold mt-1">${loading ? '...' : stats.monthSales.toLocaleString()}</h3></div>
               <div className="p-2 bg-white/10 rounded-lg text-white"><TrendingUp className="w-5 h-5" /></div>
            </div>
-           <p className="text-xs text-green-400 flex items-center gap-1"><ArrowUpRight className="w-3 h-3"/> Hedefin %12 üzerinde</p>
+           {!loading && (
+             <p className={`text-xs flex items-center gap-1 ${
+               stats.salesChange > 0 ? 'text-green-400' : 
+               stats.salesChange < 0 ? 'text-red-400' : 'text-gray-400'
+             }`}>
+               <ArrowUpRight className={`w-3 h-3 ${
+                 stats.salesChange < 0 ? 'rotate-90' : ''
+               }`}/>
+               {stats.salesChange > 0 ? '+' : ''}{stats.salesChange.toFixed(1)}% geçen aya göre
+             </p>
+           )}
         </div>
       </div>
 
