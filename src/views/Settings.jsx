@@ -4,6 +4,7 @@ import {
   Building2, Save, Clock, User, Lock, Bell, CreditCard, 
   Camera, Upload, Loader2, Mail, CheckCircle, Download, AlertTriangle
 } from 'lucide-react';
+import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
 
 export default function Settings({ userRole, currentUserId, onUpdate }) {
   const [activeTab, setActiveTab] = useState('profile');
@@ -206,9 +207,11 @@ export default function Settings({ userRole, currentUserId, onUpdate }) {
         {activeTab === 'profile' && (
            <div className="max-w-4xl space-y-8">
               <div className="flex items-center gap-6 pb-6 border-b border-gray-100">
-                <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}>
-                   <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg overflow-hidden flex items-center justify-center bg-gray-100">
-                     {profileData.avatar ? <img src={profileData.avatar} className="w-full h-full object-cover" /> : <span className="text-3xl font-bold text-gray-400">{profileData.name?.charAt(0)}</span>}
+                 <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}>
+                   <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg overflow-hidden flex items-center justify-center bg-gray-100 text-3xl font-bold text-gray-400">
+                    {isValidImageUrl(profileData.avatar)
+                      ? <img src={profileData.avatar} className="w-full h-full object-cover" />
+                      : getInitials(profileData.name)}
                    </div>
                    <input type="file" ref={fileInputRef} onChange={handleAvatarUpload} className="hidden" accept="image/*"/>
                    <button className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full shadow-md hover:bg-blue-700"><Camera className="w-4 h-4"/></button>

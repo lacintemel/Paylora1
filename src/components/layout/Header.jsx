@@ -4,6 +4,7 @@ import {
   Bell, Search, Menu, Check, CheckCheck, ArrowRight, 
   LogOut, User, ChevronDown 
 } from 'lucide-react';
+import { getInitials, isValidImageUrl } from '../../utils/avatarHelper';
 // Not: Settings ikonunu kullanmadığımız için importtan sildim, User ikonu yeterli.
 
 export default function Header({ currentUser, userRole, toggleSidebar, onNavigate, onLogout }) {
@@ -170,12 +171,12 @@ export default function Header({ currentUser, userRole, toggleSidebar, onNavigat
                     <p className="text-sm font-bold text-gray-800">{currentUser?.name}</p>
                     <p className="text-xs text-gray-500 capitalize">{userRole?.replace('_', ' ')}</p>
                 </div>
-                <div className="w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center text-white shadow-md overflow-hidden group-hover:ring-2 group-hover:ring-blue-200 transition-all">
-                    {currentUser?.avatar ? (
-                        <img src={currentUser.avatar} className="w-full h-full object-cover" alt="avatar"/>
-                    ) : (
-                        <span className="font-bold text-lg">{currentUser?.name?.charAt(0)}</span>
-                    )}
+                <div className="w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center text-white shadow-md overflow-hidden group-hover:ring-2 group-hover:ring-blue-200 transition-all text-sm font-bold">
+                  {isValidImageUrl(currentUser?.avatar) ? (
+                    <img src={currentUser.avatar} className="w-full h-full object-cover" alt="avatar"/>
+                  ) : (
+                    getInitials(currentUser?.name || 'Bilinmiyor')
+                  )}
                 </div>
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''}`} />
            </div>
