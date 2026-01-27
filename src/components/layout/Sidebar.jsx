@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Users, Clock, Calendar, 
   FileText, Briefcase, File, Building2, LogOut, BarChart2,
-  Menu // 👇 3 Çizgi İkonu (Hamburger)
+  Menu, TrendingUp
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, onNavigate, onLogout, isOpen, toggleSidebar, companySettings, userRole }) {
@@ -15,6 +15,7 @@ export default function Sidebar({ activeTab, onNavigate, onLogout, isOpen, toggl
     { id: 'leave', label: 'İzinler', icon: Calendar },
     { id: 'payroll', label: 'Bordro', icon: FileText },
     { id: 'recruitment', label: 'İşe Alım', icon: Briefcase, roles: ['general_manager', 'hr'] },
+    { id: 'sales', label: 'Satışlar', icon: TrendingUp },
     { id: 'documents', label: 'Dokümanlar', icon: File },
     { id: 'planner', label: 'Ajanda & Takvim', icon: Calendar },
     { id: 'performance', label: 'Performans', icon: BarChart2 }, 

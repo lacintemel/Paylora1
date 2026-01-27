@@ -25,6 +25,7 @@ import Planner from './views/Planner';
 import Performance from './views/Performance';
 import Announcements from './views/Announcements';
 import NotificationsPage from './views/Notifications';
+import Sales from './views/Sales';
 export default function App() {
   // --- STATE YÖNETİMİ ---
   const [session, setSession] = useState(null);
@@ -162,6 +163,7 @@ const fetchCompanySettings = async () => {
       case 'time-tracking': return <TimeTracking currentUserId={currentUser?.id} userRole={userRole} />;
       case 'leave': return <LeaveManagement currentUserId={currentUser?.id} userRole={userRole} />;
       case 'payroll': return <Payroll currentUserId={currentUser?.id} userRole={userRole} />;
+      case 'sales': return <Sales currentUserId={currentUser?.id} userRole={userRole} currentUserName={currentUser?.name} />;
       case 'planner': return <Planner userRole={userRole} currentUserId={currentUser?.id} />;
       case 'performance': return <Performance userRole={userRole} currentUserId={currentUser?.id} />;
       case 'notifications':
