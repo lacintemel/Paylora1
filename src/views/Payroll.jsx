@@ -26,6 +26,7 @@ export default function Payroll({ userRole, currentUserId }) {
   const [earningsList, setEarningsList] = useState([]);
   const [deductionsList, setDeductionsList] = useState([]);
   const [note, setNote] = useState('');
+  const [editingItem, setEditingItem] = useState(null); // Seçili item: {type: 'earnings'|'deductions', index: number}
 
   const isManager = ['general_manager', 'hr'].includes(userRole);
 
@@ -165,18 +166,53 @@ export default function Payroll({ userRole, currentUserId }) {
     setLoading(true);
     try {
         const { data: employees } = await supabase.from('employees').select('*').eq('status', 'Active');
+        console.log('Çalışanlar:', employees);
         
-        const newPayrolls = employees.map(emp => ({
-            employee_id: emp.id, period: selectedMonth, base_salary: emp.salary, 
-            status: 'Pending',
-            earnings_details: DEFAULT_EARNINGS, 
-            deductions_details: DEFAULT_DEDUCTIONS, 
-            net_pay: emp.salary * 0.70 
-        }));
-        await supabase.from('payrolls').upsert(newPayrolls);
+        for (const emp of employees) {
+            // Önce bak, varsa güncelle, yoksa ekle
+            const { data: existing } = await supabase
+                .from('payrolls')
+                .select('id')
+                .eq('employee_id', emp.id)
+                .eq('period', selectedMonth)
+                .single();
+            
+            const payrollData = {
+                employee_id: emp.id,
+                period: selectedMonth,
+                base_salary: emp.salary,
+                status: 'Pending',
+                earnings_details: DEFAULT_EARNINGS,
+                deductions_details: DEFAULT_DEDUCTIONS,
+                net_pay: emp.salary * 0.70
+            };
+            
+            console.log(`${emp.name} için bordro:`, payrollData);
+            
+            if (existing) {
+                // Güncelle
+                const { data, error } = await supabase
+                    .from('payrolls')
+                    .update(payrollData)
+                    .eq('id', existing.id);
+                console.log(`Update sonuç (${existing.id}):`, data, error);
+            } else {
+                // Ekle
+                const { data, error } = await supabase
+                    .from('payrolls')
+                    .insert(payrollData);
+                console.log('Insert sonuç:', data, error);
+            }
+        }
+        
         fetchPayrolls();
         showSuccess('Bordro başarıyla oluşturuldu!');
-    } catch (error) { showError("Hata: " + error.message); } finally { setLoading(false); }
+    } catch (error) { 
+        console.error('Full error:', error);
+        showError("Hata: " + error.message); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   // --- MODAL AÇMA VE VERİ HAZIRLAMA ---
@@ -366,51 +402,185 @@ export default function Payroll({ userRole, currentUserId }) {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         
                         {/* 2. KAZANÇLAR LİSTESİ */}
-                        <div className="space-y-4">
-                            <h3 className="text-green-700 font-bold flex items-center justify-between border-b border-green-100 pb-2">
-                                <span className="flex items-center gap-2"><TrendingUp className="w-5 h-5"/> Kazançlar / Eklemeler</span>
-                                <span className="text-sm bg-green-100 px-2 py-1 rounded text-green-800">
+                        <div className="space-y-2">
+                            <h3 className="text-green-700 font-bold flex items-center gap-2 mb-3">
+                                <TrendingUp className="w-5 h-5"/> Kazançlar / Eklemeler
+                                <span className="text-sm bg-green-100 px-2 py-0.5 rounded text-green-800 ml-auto">
                                     +${calculateEditorTotals().totalEarnings.toLocaleString()}
                                 </span>
                             </h3>
                             
-                            <div className="space-y-2">
-                                {earningsList.map((item, index) => (
-                                    <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                        <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
-                                        <span className="w-20 text-right text-sm font-bold text-green-600">
-                                          {item.type === 'percent' ? `${item.value}%` : `$${parseFloat(item.value).toLocaleString()}`}
-                                        </span>
-                                        <span className="w-8 text-center text-xs font-bold text-gray-600">
-                                          {item.type === 'percent' ? '%' : '₺'}
-                                        </span>
+                            {earningsList.map((item, index) => {
+                                const isEditing = editingItem?.type === 'earnings' && editingItem?.index === index;
+                                const calculatedAmount = calculateItemAmount(item, baseSalary);
+                                
+                                return (
+                                    <div 
+                                      key={index}
+                                      onClick={() => isManager && setEditingItem({type: 'earnings', index})}
+                                      className={`${isManager ? 'cursor-pointer' : ''} transition-all`}
+                                    >
+                                      {isEditing && isManager ? (
+                                        <div className="bg-green-50 border border-green-300 rounded-lg p-3 space-y-2">
+                                          <input 
+                                            type="text"
+                                            value={item.name}
+                                            onChange={(e) => updateItem('earnings', index, 'name', e.target.value)}
+                                            placeholder="Ad"
+                                            className="w-full text-sm font-bold bg-white border border-green-300 rounded p-2 outline-none focus:ring-2 focus:ring-green-500"
+                                          />
+                                          <div className="flex gap-2">
+                                            <input 
+                                              type="number"
+                                              value={item.value}
+                                              onChange={(e) => updateItem('earnings', index, 'value', parseFloat(e.target.value) || 0)}
+                                              placeholder="Değer"
+                                              className="flex-1 text-sm font-bold bg-white border border-green-300 rounded p-2 outline-none focus:ring-2 focus:ring-green-500"
+                                            />
+                                            <select 
+                                              value={item.type}
+                                              onChange={(e) => updateItem('earnings', index, 'type', e.target.value)}
+                                              className="px-2 text-sm bg-white border border-green-300 rounded font-bold outline-none focus:ring-2 focus:ring-green-500"
+                                            >
+                                              <option value="fixed">₺</option>
+                                              <option value="percent">%</option>
+                                            </select>
+                                          </div>
+                                          {item.isCustom && (
+                                            <button 
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                removeItem('earnings', index);
+                                                setEditingItem(null);
+                                              }}
+                                              className="w-full py-1 text-red-600 hover:bg-red-50 rounded font-semibold text-xs"
+                                            >
+                                              Sil
+                                            </button>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className={`flex items-center justify-between py-1.5 px-2 rounded hover:bg-green-50 ${isEditing ? 'bg-green-50' : ''}`}>
+                                          <span className="text-sm font-medium text-gray-700 flex-1">{item.name}</span>
+                                          <div className="text-right">
+                                            <span className="text-sm font-bold text-green-600">
+                                              {item.type === 'percent' ? `${item.value}%` : `$${parseFloat(item.value).toLocaleString()}`}
+                                            </span>
+                                            <span className="text-xs font-bold text-gray-600 ml-1">
+                                              {item.type === 'percent' ? '%' : '₺'}
+                                            </span>
+                                            <span className="text-xs text-gray-500 block">
+                                              = ${calculatedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })}
+                            
+                            {isManager && (
+                              <button 
+                                onClick={() => {
+                                  addItem('earnings');
+                                  setEditingItem({type: 'earnings', index: earningsList.length});
+                                }}
+                                className="w-full py-1.5 text-green-700 font-semibold text-sm hover:bg-green-50 rounded mt-2"
+                              >
+                                + Kazanç Ekle
+                              </button>
+                            )}
                         </div>
 
                         {/* 3. KESİNTİLER LİSTESİ */}
-                        <div className="space-y-4">
-                            <h3 className="text-red-700 font-bold flex items-center justify-between border-b border-red-100 pb-2">
-                                <span className="flex items-center gap-2"><TrendingDown className="w-5 h-5"/> Kesintiler / Vergiler</span>
-                                <span className="text-sm bg-red-100 px-2 py-1 rounded text-red-800">
+                        <div className="space-y-2">
+                            <h3 className="text-red-700 font-bold flex items-center gap-2 mb-3">
+                                <TrendingDown className="w-5 h-5"/> Kesintiler / Vergiler
+                                <span className="text-sm bg-red-100 px-2 py-0.5 rounded text-red-800 ml-auto">
                                     -${calculateEditorTotals().totalDeductions.toLocaleString()}
                                 </span>
                             </h3>
 
-                            <div className="space-y-2">
-                                {deductionsList.map((item, index) => (
-                                    <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                        <span className="flex-1 text-sm font-medium text-gray-700">{item.name}</span>
-                                        <span className="w-20 text-right text-sm font-bold text-red-600">
-                                          {item.type === 'percent' ? `${item.value}%` : `$${parseFloat(item.value).toLocaleString()}`}
-                                        </span>
-                                        <span className="w-8 text-center text-xs font-bold text-gray-600">
-                                          {item.type === 'percent' ? '%' : '₺'}
-                                        </span>
+                            {deductionsList.map((item, index) => {
+                                const isEditing = editingItem?.type === 'deductions' && editingItem?.index === index;
+                                const calculatedAmount = calculateItemAmount(item, baseSalary);
+                                
+                                return (
+                                    <div 
+                                      key={index}
+                                      onClick={() => isManager && setEditingItem({type: 'deductions', index})}
+                                      className={`${isManager ? 'cursor-pointer' : ''} transition-all`}
+                                    >
+                                      {isEditing && isManager ? (
+                                        <div className="bg-red-50 border border-red-300 rounded-lg p-3 space-y-2">
+                                          <input 
+                                            type="text"
+                                            value={item.name}
+                                            onChange={(e) => updateItem('deductions', index, 'name', e.target.value)}
+                                            placeholder="Ad"
+                                            className="w-full text-sm font-bold bg-white border border-red-300 rounded p-2 outline-none focus:ring-2 focus:ring-red-500"
+                                          />
+                                          <div className="flex gap-2">
+                                            <input 
+                                              type="number"
+                                              value={item.value}
+                                              onChange={(e) => updateItem('deductions', index, 'value', parseFloat(e.target.value) || 0)}
+                                              placeholder="Değer"
+                                              className="flex-1 text-sm font-bold bg-white border border-red-300 rounded p-2 outline-none focus:ring-2 focus:ring-red-500"
+                                            />
+                                            <select 
+                                              value={item.type}
+                                              onChange={(e) => updateItem('deductions', index, 'type', e.target.value)}
+                                              className="px-2 text-sm bg-white border border-red-300 rounded font-bold outline-none focus:ring-2 focus:ring-red-500"
+                                            >
+                                              <option value="fixed">₺</option>
+                                              <option value="percent">%</option>
+                                            </select>
+                                          </div>
+                                          {item.isCustom && (
+                                            <button 
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                removeItem('deductions', index);
+                                                setEditingItem(null);
+                                              }}
+                                              className="w-full py-1 text-red-600 hover:bg-red-50 rounded font-semibold text-xs"
+                                            >
+                                              Sil
+                                            </button>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className={`flex items-center justify-between py-1.5 px-2 rounded hover:bg-red-50 ${isEditing ? 'bg-red-50' : ''}`}>
+                                          <span className="text-sm font-medium text-gray-700 flex-1">{item.name}</span>
+                                          <div className="text-right">
+                                            <span className="text-sm font-bold text-red-600">
+                                              {item.type === 'percent' ? `${item.value}%` : `$${parseFloat(item.value).toLocaleString()}`}
+                                            </span>
+                                            <span className="text-xs font-bold text-gray-600 ml-1">
+                                              {item.type === 'percent' ? '%' : '₺'}
+                                            </span>
+                                            <span className="text-xs text-gray-500 block">
+                                              = ${calculatedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })}
+                            
+                            {isManager && (
+                              <button 
+                                onClick={() => {
+                                  addItem('deductions');
+                                  setEditingItem({type: 'deductions', index: deductionsList.length});
+                                }}
+                                className="w-full py-1.5 text-red-700 font-semibold text-sm hover:bg-red-50 rounded mt-2"
+                              >
+                                + Kesinti Ekle
+                              </button>
+                            )}
                         </div>
                     </div>
 
