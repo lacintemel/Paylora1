@@ -88,18 +88,30 @@ export default function Performance({ userRole, currentUserId }) {
               const type = (l.leave_type || '').toLowerCase();
               return type.includes('annual') || type.includes('yıllık');
             })
-            .reduce((acc, curr) => acc + (curr.days || 0), 0);
+            .reduce((acc, curr) => {
+              // days kolonunu kullan, yoksa tarih farkından hesapla
+              if (curr.days) return acc + curr.days;
+              const start = new Date(curr.start_date);
+              const end = new Date(curr.end_date);
+              const diffTime = Math.abs(end - start);
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+              return acc + diffDays;
+            }, 0);
           
           const annualRights = emp.annual_leave_days || 14; 
-          const remainingLeave = annualRights - totalUsedAnnualDays;
+          const remainingLeave = Math.max(0, annualRights - totalUsedAnnualDays);
 
-          // 3. SATIŞ ANALİZİ (Bu hafta ve toplam)
+          // 3. SATIŞ ANALİZİ (Bu hafta ve bu haftaya kadar toplam)
           const empWeeklySales = weeklySales.filter(s => s.employee_id === emp.id);
           const weekSalesAmount = empWeeklySales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
           const weekSalesCount = empWeeklySales.length;
 
-          const empTotalSales = (allSales || []).filter(s => s.employee_id === emp.id);
-          const totalSalesAmount = empTotalSales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+          // Bu haftaya kadar olan tüm satışlar (birikimli)
+          const empCumulativeSales = (allSales || []).filter(s => {
+            const saleDate = new Date(s.sale_date);
+            return s.employee_id === emp.id && saleDate <= endOfWeek;
+          });
+          const cumulativeSalesAmount = empCumulativeSales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
 
           // Diğer veriler
           const daysWorkedThisWeek = (weeklyLogs || []).filter(l => l.employee_id === emp.id).length;
@@ -115,7 +127,7 @@ export default function Performance({ userRole, currentUserId }) {
                   totalRights: annualRights,
                   weekSales: weekSalesAmount,
                   weekSalesCount: weekSalesCount,
-                  totalSales: totalSalesAmount
+                  totalSales: cumulativeSalesAmount  // Bu haftaya kadar birikimli toplam
               },
               review: review || { rating: 0, feedback: '' }
           };
@@ -144,11 +156,18 @@ export default function Performance({ userRole, currentUserId }) {
   const analyzeEmployee = async (empId, empName) => {
     setAnalyzing(empId);
     try {
+        // Performans puanları
         const { data: allReviews } = await supabase.from('performance_reviews').select('rating, week_start_date').eq('employee_id', empId).order('week_start_date', { ascending: true });
         if (!allReviews || allReviews.length < 3) {
             alert("⚠️ Yetersiz Veri: Analiz için en az 3 haftalık puanlama verisi gerekli.");
             setAnalyzing(null); return;
         }
+        
+        // İzin verileri
+        const { data: empLeaves } = await supabase.from('leave_requests').select('*').eq('employee_id', empId).eq('status', 'Approved');
+        
+        // Satış verileri
+        const { data: allEmpSales } = await supabase.from('sales').select('amount, sale_date').eq('employee_id', empId).order('sale_date', { ascending: true });
         
         // Son 8 haftalık veriyi al
         const recentReviews = allReviews.slice(-8);
@@ -162,25 +181,93 @@ export default function Performance({ userRole, currentUserId }) {
         const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
         const trendDirection = secondAvg > firstAvg ? 'yükseliş' : secondAvg < firstAvg ? 'düşüş' : 'sabit';
         
+        // Haftalık satış analizi (Birikimli toplam hesapla)
+        const weeklyDataWithSales = recentReviews.map((review, idx) => {
+            const weekStart = new Date(review.week_start_date);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            
+            // Bu haftanın satışları
+            const weekSales = (allEmpSales || []).filter(s => {
+                const saleDate = new Date(s.sale_date);
+                return saleDate >= weekStart && saleDate <= weekEnd;
+            });
+            const weekSalesAmount = weekSales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+            
+            // Birikimli toplam (bu haftaya kadar olan tüm satışlar)
+            const cumulativeSales = (allEmpSales || []).filter(s => {
+                const saleDate = new Date(s.sale_date);
+                return saleDate <= weekEnd;
+            });
+            const cumulativeAmount = cumulativeSales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+            
+            return {
+                ...review,
+                weekSales: weekSalesAmount,
+                totalSales: cumulativeAmount
+            };
+        });
+        
+        // İzin-Performans Analizi
+        let leaveAnalysis = "Yeterli izin verisi yok.";
+        if (empLeaves && empLeaves.length > 0) {
+            const dayOfWeekPerformance = {};
+            
+            empLeaves.forEach(leave => {
+                const leaveStart = new Date(leave.start_date);
+                const leaveEnd = new Date(leave.end_date);
+                
+                // İzinden sonraki haftanın puanını bul
+                const afterLeaveWeek = allReviews.find(r => {
+                    const reviewDate = new Date(r.week_start_date);
+                    return reviewDate >= leaveEnd && reviewDate <= new Date(leaveEnd.getTime() + 14 * 24 * 60 * 60 * 1000);
+                });
+                
+                if (afterLeaveWeek) {
+                    const dayName = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'][leaveStart.getDay()];
+                    if (!dayOfWeekPerformance[dayName]) dayOfWeekPerformance[dayName] = [];
+                    dayOfWeekPerformance[dayName].push(afterLeaveWeek.rating);
+                }
+            });
+            
+            // En verimli izin günü
+            let bestDay = null;
+            let bestAvg = 0;
+            Object.keys(dayOfWeekPerformance).forEach(day => {
+                const avg = dayOfWeekPerformance[day].reduce((a, b) => a + b, 0) / dayOfWeekPerformance[day].length;
+                if (avg > bestAvg) {
+                    bestAvg = avg;
+                    bestDay = day;
+                }
+            });
+            
+            if (bestDay) {
+                leaveAnalysis = `${bestDay} günü izin kullandığında sonraki hafta ortalama ${bestAvg.toFixed(1)} puan performans gösteriyor. Bu günler izin için en uygun.`;
+            }
+        }
+        
         // AI Önerileri
         let recommendations = [];
         if (avgRating >= 4.5) {
             recommendations = [
                 "Mükemmel performans sergiliyor, liderlik fırsatları sunulabilir.",
                 "Yüksek potansiyelli çalışan, mentorluk rolü verilebilir.",
-                "Ödüllendirme ve terfi değerlendirmesi yapılmalı."
+                "Ödüllendirme ve terfi değerlendirmesi yapılmalı.",
+                leaveAnalysis
             ];
         } else if (avgRating >= 3.5) {
             recommendations = [
                 "İyi performans gösteriyor, gelişim alanları belirlenebilir.",
                 "Hedef odaklı eğitim programları önerilebilir.",
-                "Düzenli geri bildirimle performans artırılabilir."
+                "Düzenli geri bildirimle performans artırılabilir.",
+                leaveAnalysis
             ];
         } else {
             recommendations = [
                 "Performans gelişim planı oluşturulmalı.",
                 "Birebir koçluk ve mentorluk desteği sağlanmalı.",
-                "Hedeflerin netleştirilmesi ve destek artırılmalı."
+                "Hedeflerin netleştirilmesi ve destek artırılmalı.",
+                leaveAnalysis
             ];
         }
         
@@ -189,7 +276,7 @@ export default function Performance({ userRole, currentUserId }) {
             avgRating,
             trend: trendDirection,
             trendIcon: trendDirection === 'yükseliş' ? 'up' : trendDirection === 'düşüş' ? 'down' : 'stable',
-            weeklyData: recentReviews,
+            weeklyData: weeklyDataWithSales,
             recommendations
         });
 
@@ -299,9 +386,18 @@ export default function Performance({ userRole, currentUserId }) {
                          </div>
                       </div>
                       <div className="flex-1 text-center border-l border-blue-200 pl-3">
-                         <div className="text-[9px] text-purple-400 uppercase font-bold mb-1">Toplam Satış</div>
-                         <div className="text-lg font-black text-purple-600 flex items-center justify-center gap-1">
-                            <Award className="w-4 h-4"/> ${(emp.stats?.totalSales || 0).toLocaleString()}
+                         <div className="text-[9px] text-purple-400 uppercase font-bold mb-1">Satış</div>
+                         <div className="flex flex-col gap-1">
+                            <div className="flex items-center justify-center gap-1">
+                               <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                               <span className="text-[8px] text-gray-600">Hafta:</span>
+                               <span className="text-sm font-black text-blue-600">${(emp.stats?.weekSales || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center justify-center gap-1">
+                               <div className="w-2 h-2 rounded-full bg-purple-600"></div>
+                               <span className="text-[8px] text-gray-600">Toplam:</span>
+                               <span className="text-sm font-black text-purple-600">${(emp.stats?.totalSales || 0).toLocaleString()}</span>
+                            </div>
                          </div>
                       </div>
                    </div>
@@ -392,27 +488,69 @@ export default function Performance({ userRole, currentUserId }) {
                    {/* Haftalık Trend Grafiği */}
                    <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
                       <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                         <BarChart2 className="w-5 h-5 text-purple-600"/> Haftalık Performans Grafiği
+                         <BarChart2 className="w-5 h-5 text-purple-600"/> Haftalık Performans & Satış Grafiği
                       </h3>
-                      <div className="flex items-end gap-2 h-40">
-                         {analysisResult.weeklyData.map((review, idx) => {
-                            const heightPercent = (review.rating / 5) * 100;
-                            return (
-                               <div key={idx} className="flex-1 flex flex-col items-center gap-1">
-                                  <div className="text-xs font-bold text-gray-600">{review.rating}</div>
-                                  <div 
-                                     className={`w-full rounded-t-lg transition-all ${
-                                        review.rating >= 4 ? 'bg-green-500' :
-                                        review.rating >= 3 ? 'bg-yellow-500' : 'bg-red-500'
-                                     }`}
-                                     style={{ height: `${heightPercent}%` }}
-                                  ></div>
-                                  <div className="text-[9px] text-gray-400 font-medium text-center">
-                                     {new Date(review.week_start_date).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' })}
+                      <div className="space-y-4">
+                         {/* Performans Grafiği */}
+                         <div>
+                            <div className="text-xs text-gray-500 font-semibold mb-3">Performans Puanı</div>
+                            <div className="flex items-end justify-between gap-3 h-48 bg-white p-4 rounded-lg">
+                               {analysisResult.weeklyData.map((review, idx) => {
+                                  const heightPercent = (review.rating / 5) * 100;
+                                  return (
+                                     <div key={idx} className="flex-1 flex flex-col items-center gap-2">
+                                        {/* Puan sayısı üstte */}
+                                        <div className="text-sm font-bold text-gray-700 mb-1">{review.rating.toFixed(1)}</div>
+                                        {/* Sütun grafiği */}
+                                        <div className="relative w-full flex items-end" style={{ height: '140px' }}>
+                                           <div 
+                                              className={`w-full rounded-t-lg shadow-md transition-all hover:shadow-lg hover:scale-105 ${
+                                                 review.rating >= 4.5 ? 'bg-gradient-to-t from-green-600 to-green-400' :
+                                                 review.rating >= 4 ? 'bg-gradient-to-t from-green-500 to-green-300' :
+                                                 review.rating >= 3 ? 'bg-gradient-to-t from-yellow-500 to-yellow-300' : 
+                                                 'bg-gradient-to-t from-red-500 to-red-300'
+                                              }`}
+                                              style={{ height: `${heightPercent}%`, minHeight: '10px' }}
+                                           >
+                                              {/* Gradient overlay */}
+                                              <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent rounded-t-lg"></div>
+                                           </div>
+                                        </div>
+                                        {/* Tarih altta */}
+                                        <div className="text-[10px] text-gray-500 font-semibold text-center mt-1">
+                                           {new Date(review.week_start_date).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' })}
+                                        </div>
+                                     </div>
+                                  );
+                               })}
+                            </div>
+                         </div>
+
+                         {/* Satış İstatistikleri */}
+                         <div className="border-t border-gray-200 pt-4">
+                            <div className="text-xs text-gray-500 font-semibold mb-3">Haftalık & Birikimli Satış</div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                               {analysisResult.weeklyData.map((review, idx) => (
+                                  <div key={idx} className="bg-white p-3 rounded-lg border border-gray-200">
+                                     <div className="text-[8px] text-gray-400 uppercase font-bold mb-1">
+                                        {new Date(review.week_start_date).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' })}
+                                     </div>
+                                     <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-1">
+                                           <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                           <span className="text-[10px] text-gray-500">Hafta:</span>
+                                           <span className="text-xs font-bold text-blue-600">${(review.weekSales || 0).toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                           <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                                           <span className="text-[10px] text-gray-500">Toplam:</span>
+                                           <span className="text-xs font-bold text-purple-600">${(review.totalSales || 0).toLocaleString()}</span>
+                                        </div>
+                                     </div>
                                   </div>
-                               </div>
-                            );
-                         })}
+                               ))}
+                            </div>
+                         </div>
                       </div>
                    </div>
 
