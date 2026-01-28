@@ -64,15 +64,29 @@ export const exportPayrollToPDF = (payrolls, month) => {
   const totalAmount = payrolls.reduce((sum, p) => sum + (p.net_pay || 0), 0);
   doc.text(`Toplam Ödeme: $${totalAmount.toLocaleString()}`, 14, 46);
   
+  // Yardımcı: Hesaplama
+  const calculateItemAmount = (item, salary) => {
+    const val = parseFloat(item.value) || 0;
+    return item.type === 'percent' ? (salary * val) / 100 : val;
+  };
+  
   doc.autoTable({
-    head: [['Çalışan', 'Brüt Maaş', 'Kesintiler', 'Net Maaş', 'Durum']],
-    body: payrolls.map(p => [
-      p.employee?.name || 'Bilinmiyor',
-      `$${(p.gross_pay || 0).toLocaleString()}`,
-      `$${(p.deductions || 0).toLocaleString()}`,
-      `$${(p.net_pay || 0).toLocaleString()}`,
-      p.status === 'Paid' ? 'Ödendi' : 'Bekliyor'
-    ]),
+    head: [['Çalışan', 'Aylık Maaş', 'Kazançlar', 'Kesintiler', 'Net Maaş', 'Durum']],
+    body: payrolls.map(p => {
+      const baseSalary = p.base_salary || 0;
+      const totalEarnings = (p.earnings_details || []).reduce((acc, item) => acc + calculateItemAmount(item, baseSalary), 0);
+      const totalDeductions = (p.deductions_details || []).reduce((acc, item) => acc + calculateItemAmount(item, baseSalary), 0);
+      const netPay = baseSalary + totalEarnings - totalDeductions;
+      
+      return [
+        p.employees?.name || 'Bilinmiyor',
+        `$${baseSalary.toLocaleString()}`,
+        `$${totalEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `$${totalDeductions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `$${netPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        p.status === 'Paid' ? 'Ödendi' : 'Bekliyor'
+      ];
+    }),
     startY: 55,
     styles: { fontSize: 9 },
     headStyles: { fillColor: [34, 197, 94] },
@@ -112,23 +126,29 @@ export const exportEmployeesToExcel = (employees) => {
 
 // Leave Requests Export
 export const exportLeavesToPDF = (leaves) => {
-  const columns = [
-    { label: 'Çalışan', key: 'employee_name' },
-    { label: 'Tür', key: 'leave_type' },
-    { label: 'Başlangıç', key: 'start_date' },
-    { label: 'Bitiş', key: 'end_date' },
-    { label: 'Gün', key: 'days' },
-    { label: 'Durum', key: 'status' },
-  ];
+  const doc = new jsPDF();
   
-  const formattedData = leaves.map(l => ({
-    employee_name: l.employees?.name || 'Bilinmiyor',
-    leave_type: l.leave_type,
-    start_date: new Date(l.start_date).toLocaleDateString('tr-TR'),
-    end_date: new Date(l.end_date).toLocaleDateString('tr-TR'),
-    days: l.days,
-    status: l.status === 'Approved' ? 'Onaylı' : l.status === 'Rejected' ? 'Reddedildi' : 'Bekliyor'
-  }));
+  doc.setFontSize(20);
+  doc.text('İZİN RAPORU', 14, 20);
   
-  exportToPDF(formattedData, columns, `izinler_${new Date().toISOString().split('T')[0]}`, 'İzin Raporları');
+  doc.setFontSize(12);
+  doc.text(`Oluşturma Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, 14, 30);
+  doc.text(`Toplam İzin Talebi: ${leaves.length}`, 14, 38);
+  
+  doc.autoTable({
+    head: [['Çalışan', 'İzin Türü', 'Başlangıç', 'Bitiş', 'Gün', 'Durum']],
+    body: leaves.map(l => [
+      l.employees?.name || 'Bilinmiyor',
+      l.leave_type === 'annual' ? 'Yıllık' : l.leave_type === 'sick' ? 'Hastalık' : l.leave_type === 'unpaid' ? 'Ücretsiz' : l.leave_type,
+      new Date(l.start_date).toLocaleDateString('tr-TR'),
+      new Date(l.end_date).toLocaleDateString('tr-TR'),
+      l.days || 0,
+      l.status === 'Approved' ? 'Onaylı' : l.status === 'Rejected' ? 'Reddedildi' : 'Bekliyor'
+    ]),
+    startY: 45,
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [59, 130, 246] },
+  });
+  
+  doc.save(`izinler_${new Date().toISOString().split('T')[0]}.pdf`);
 };
