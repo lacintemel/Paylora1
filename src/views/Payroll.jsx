@@ -217,11 +217,17 @@ export default function Payroll({ userRole, currentUserId }) {
 
   // --- MODAL AÇMA VE VERİ HAZIRLAMA ---
   const openDetailModal = (payroll) => {
+      console.log('Opening payroll:', payroll);
+      console.log('Base salary:', payroll.base_salary);
+      console.log('Earnings:', payroll.earnings_details);
+      console.log('Deductions:', payroll.deductions_details);
+      
       setSelectedPayroll(payroll);
       setBaseSalary(payroll.base_salary || payroll.employees?.salary || 0);
       setEarningsList(payroll.earnings_details && payroll.earnings_details.length > 0 ? payroll.earnings_details : DEFAULT_EARNINGS);
       setDeductionsList(payroll.deductions_details && payroll.deductions_details.length > 0 ? payroll.deductions_details : DEFAULT_DEDUCTIONS);
       setNote(payroll.notes || '');
+      setEditingItem(null);
       setIsDetailOpen(true);
   };
 
@@ -282,20 +288,22 @@ export default function Payroll({ userRole, currentUserId }) {
                <thead>
                   <tr className="bg-gray-50 border-b text-xs text-gray-500 uppercase tracking-wider">
                      <th className="p-4 font-bold">Personel</th>
-                     <th className="p-4 font-bold">Temel Maaş</th>
-                     <th className="p-4 font-bold text-green-600">Ek Kazanç (+)</th>
+                     <th className="p-4 font-bold">Yıllık Maaş</th>
+                     <th className="p-4 font-bold">Aylık Maaş</th>
+                     <th className="p-4 font-bold text-green-600">Bonus (+)</th>
                      <th className="p-4 font-bold text-red-600">Kesinti (-)</th>
-                     <th className="p-4 font-bold">Net Ödenecek</th>
+                     <th className="p-4 font-bold">Net</th>
                      <th className="p-4 font-bold">Durum</th>
                      <th className="p-4 text-right">İşlem</th>
                   </tr>
                </thead>
                <tbody className="divide-y divide-gray-100">
-                  {loading ? <tr><td colSpan="7" className="p-12 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></td></tr> : 
+                  {loading ? <tr><td colSpan="8" className="p-12 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></td></tr> : 
                   payrolls.filter(p => p.employees?.name?.toLowerCase().includes(searchTerm.toLowerCase())).map((payroll) => {
                      
                      // 🔥 HER SATIR İÇİN ÖZETİ HESAPLA
                      const summary = calculateRowSummary(payroll);
+                     const annualSalary = parseInt((payroll.base_salary || 0) * 12); // Tam sayı - kuruş at
 
                      return (
                      <tr key={payroll.id} className="hover:bg-gray-50/50 transition-colors">
@@ -308,7 +316,8 @@ export default function Payroll({ userRole, currentUserId }) {
                                 <div className="text-xs text-gray-400">{payroll.employees?.position}</div>
                             </div>
                         </td>
-                        <td className="p-4 text-sm font-medium text-gray-600">${(payroll.base_salary||0).toLocaleString()}</td>
+                        <td className="p-4 text-sm font-medium text-purple-600">${annualSalary.toLocaleString()}</td>
+                        <td className="p-4 text-sm font-medium text-blue-600">${(payroll.base_salary||0).toLocaleString()}</td>
                         
                         {/* HESAPLANAN ÖZET DEĞERLER */}
                         <td className="p-4 text-sm font-medium text-green-600">
@@ -380,23 +389,36 @@ export default function Payroll({ userRole, currentUserId }) {
                     </div>
                 </div>
 
-                <div className="p-8 space-y-8">
+                        <div className="p-8 space-y-8" onClick={() => setEditingItem(null)}>
                     
-                    {/* 1. TEMEL MAAŞ */}
-                    <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex justify-between items-center">
-                        <div className="flex items-center gap-2 font-bold text-blue-800">
-                            <DollarSign className="w-5 h-5"/> Temel Brüt Maaş
+                    {/* 1. YILLIK VE AYLIK MAAŞ */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100">
+                            <div className="flex items-center gap-2 font-bold text-purple-800 mb-2">
+                                <DollarSign className="w-5 h-5"/> Yıllık Maaş
+                            </div>
+                            <div className="text-2xl font-black text-purple-900">
+                                ${parseInt(parseFloat(baseSalary) * 12).toLocaleString()}
+                            </div>
                         </div>
-                        {isManager ? (
-                          <input 
-                              type="number"
-                              value={baseSalary} 
-                              onChange={(e) => setBaseSalary(e.target.value)} 
-                              className="w-40 text-right font-bold text-lg bg-white border border-blue-200 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
-                        ) : (
-                          <span className="w-40 text-right font-bold text-lg text-blue-800">${parseFloat(baseSalary).toLocaleString()}</span>
-                        )}
+                        
+                        <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                            <div className="flex items-center gap-2 font-bold text-blue-800 mb-2">
+                                <DollarSign className="w-5 h-5"/> Aylık Temel Maaş
+                            </div>
+                            {isManager ? (
+                                <input 
+                                    type="number"
+                                    value={baseSalary} 
+                                    onChange={(e) => setBaseSalary(e.target.value)} 
+                                    className="w-full text-right font-bold text-2xl bg-white border border-blue-200 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                            ) : (
+                                <div className="text-2xl font-black text-blue-900">
+                                    ${parseFloat(baseSalary).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -417,34 +439,35 @@ export default function Payroll({ userRole, currentUserId }) {
                                 return (
                                     <div 
                                       key={index}
-                                      onClick={() => isManager && setEditingItem({type: 'earnings', index})}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        isManager && setEditingItem({type: 'earnings', index});
+                                      }}
                                       className={`${isManager ? 'cursor-pointer' : ''} transition-all`}
                                     >
                                       {isEditing && isManager ? (
-                                        <div className="bg-green-50 border border-green-300 rounded-lg p-3 space-y-2">
+                                        <div className="bg-green-200/70 rounded-xl p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
                                           <input 
                                             type="text"
                                             value={item.name}
                                             onChange={(e) => updateItem('earnings', index, 'name', e.target.value)}
-                                            placeholder="Ad"
-                                            className="w-full text-sm font-bold bg-white border border-green-300 rounded p-2 outline-none focus:ring-2 focus:ring-green-500"
+                                            placeholder="Adı"
+                                            className="w-full text-xs font-bold bg-white/80 border-0 rounded-lg p-2 outline-none focus:ring-1 focus:ring-green-600"
                                           />
-                                          <div className="flex gap-2">
+                                          <div className="flex gap-2 items-center">
                                             <input 
                                               type="number"
                                               value={item.value}
                                               onChange={(e) => updateItem('earnings', index, 'value', parseFloat(e.target.value) || 0)}
-                                              placeholder="Değer"
-                                              className="flex-1 text-sm font-bold bg-white border border-green-300 rounded p-2 outline-none focus:ring-2 focus:ring-green-500"
+                                              placeholder="0"
+                                              className="flex-1 text-xs font-bold bg-white/80 border-0 rounded-lg p-2 outline-none focus:ring-1 focus:ring-green-600"
                                             />
-                                            <select 
-                                              value={item.type}
-                                              onChange={(e) => updateItem('earnings', index, 'type', e.target.value)}
-                                              className="px-2 text-sm bg-white border border-green-300 rounded font-bold outline-none focus:ring-2 focus:ring-green-500"
+                                            <button
+                                              onClick={() => updateItem('earnings', index, 'type', item.type === 'fixed' ? 'percent' : 'fixed')}
+                                              className="px-3 py-2 text-xs bg-white/90 border-0 rounded-lg font-bold text-green-700 hover:bg-white transition-colors"
                                             >
-                                              <option value="fixed">₺</option>
-                                              <option value="percent">%</option>
-                                            </select>
+                                              {item.type === 'fixed' ? '$' : '%'}
+                                            </button>
                                           </div>
                                           {item.isCustom && (
                                             <button 
@@ -467,7 +490,7 @@ export default function Payroll({ userRole, currentUserId }) {
                                               {item.type === 'percent' ? `${item.value}%` : `$${parseFloat(item.value).toLocaleString()}`}
                                             </span>
                                             <span className="text-xs font-bold text-gray-600 ml-1">
-                                              {item.type === 'percent' ? '%' : '₺'}
+                                              {item.type === 'percent' ? '%' : '$'}
                                             </span>
                                             <span className="text-xs text-gray-500 block">
                                               = ${calculatedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -508,34 +531,35 @@ export default function Payroll({ userRole, currentUserId }) {
                                 return (
                                     <div 
                                       key={index}
-                                      onClick={() => isManager && setEditingItem({type: 'deductions', index})}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        isManager && setEditingItem({type: 'deductions', index});
+                                      }}
                                       className={`${isManager ? 'cursor-pointer' : ''} transition-all`}
                                     >
                                       {isEditing && isManager ? (
-                                        <div className="bg-red-50 border border-red-300 rounded-lg p-3 space-y-2">
+                                        <div className="bg-red-200/70 rounded-xl p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
                                           <input 
                                             type="text"
                                             value={item.name}
                                             onChange={(e) => updateItem('deductions', index, 'name', e.target.value)}
-                                            placeholder="Ad"
-                                            className="w-full text-sm font-bold bg-white border border-red-300 rounded p-2 outline-none focus:ring-2 focus:ring-red-500"
+                                            placeholder="Adı"
+                                            className="w-full text-xs font-bold bg-white/80 border-0 rounded-lg p-2 outline-none focus:ring-1 focus:ring-red-600"
                                           />
-                                          <div className="flex gap-2">
+                                          <div className="flex gap-2 items-center">
                                             <input 
                                               type="number"
                                               value={item.value}
                                               onChange={(e) => updateItem('deductions', index, 'value', parseFloat(e.target.value) || 0)}
-                                              placeholder="Değer"
-                                              className="flex-1 text-sm font-bold bg-white border border-red-300 rounded p-2 outline-none focus:ring-2 focus:ring-red-500"
+                                              placeholder="0"
+                                              className="flex-1 text-xs font-bold bg-white/80 border-0 rounded-lg p-2 outline-none focus:ring-1 focus:ring-red-600"
                                             />
-                                            <select 
-                                              value={item.type}
-                                              onChange={(e) => updateItem('deductions', index, 'type', e.target.value)}
-                                              className="px-2 text-sm bg-white border border-red-300 rounded font-bold outline-none focus:ring-2 focus:ring-red-500"
+                                            <button
+                                              onClick={() => updateItem('deductions', index, 'type', item.type === 'fixed' ? 'percent' : 'fixed')}
+                                              className="px-3 py-2 text-xs bg-white/90 border-0 rounded-lg font-bold text-red-700 hover:bg-white transition-colors"
                                             >
-                                              <option value="fixed">₺</option>
-                                              <option value="percent">%</option>
-                                            </select>
+                                              {item.type === 'fixed' ? '$' : '%'}
+                                            </button>
                                           </div>
                                           {item.isCustom && (
                                             <button 
@@ -558,7 +582,7 @@ export default function Payroll({ userRole, currentUserId }) {
                                               {item.type === 'percent' ? `${item.value}%` : `$${parseFloat(item.value).toLocaleString()}`}
                                             </span>
                                             <span className="text-xs font-bold text-gray-600 ml-1">
-                                              {item.type === 'percent' ? '%' : '₺'}
+                                              {item.type === 'percent' ? '%' : '$'}
                                             </span>
                                             <span className="text-xs text-gray-500 block">
                                               = ${calculatedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -594,7 +618,7 @@ export default function Payroll({ userRole, currentUserId }) {
                 <div className="px-8 py-5 border-t border-gray-100 flex justify-between items-center bg-white">
                     <button onClick={() => window.print()} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 font-bold text-sm"><Printer className="w-4 h-4"/> Yazdır</button>
                     <div className="flex gap-3">
-                        <button onClick={() => setIsDetailOpen(false)} className="bg-gray-100 text-gray-600 px-6 py-2.5 rounded-xl font-bold hover:bg-gray-200">Kapat</button>
+                        <button onClick={() => { setIsDetailOpen(false); setEditingItem(null); }} className="bg-gray-100 text-gray-600 px-6 py-2.5 rounded-xl font-bold hover:bg-gray-200">Kapat</button>
                         {isManager && (
                             <button onClick={handleSaveChanges} className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 flex items-center gap-2">
                                 <Save className="w-4 h-4"/> Kaydet
