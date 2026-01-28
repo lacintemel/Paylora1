@@ -76,15 +76,162 @@ export const employeesData = [
 
 // --- MAAŞ VERİLERİ (Payroll.jsx için kritik!) ---
 export const payrollData = [
-  { id: 101, employeeId: 1, period: 'Ocak 2026', salary: 95000, net: 71250, status: 'Paid' },
-  { id: 102, employeeId: 2, period: 'Ocak 2026', salary: 110000, net: 82500, status: 'Processing' },
-  { id: 103, employeeId: 3, period: 'Ocak 2026', salary: 88000, net: 66000, status: 'Paid' },
-  { id: 104, employeeId: 4, period: 'Ocak 2026', salary: 75000, net: 56250, status: 'Processing' },
-  { id: 105, employeeId: 5, period: 'Ocak 2026', salary: 92000, net: 69000, status: 'Paid' },
+  { 
+    id: 101, 
+    employeeId: 1, 
+    period: 'Ocak 2026', 
+    base_salary: 95000, 
+    net: 71250, 
+    status: 'Paid',
+    earnings_details: [
+      { id: 'bonus', name: 'İkramiye / Bonus', type: 'fixed', value: 0 },
+      { id: 'overtime', name: 'Fazla Mesai', type: 'fixed', value: 0 },
+      { id: 'commission', name: 'Komisyon', type: 'fixed', value: 0 },
+      { id: 'premium', name: 'Prim', type: 'fixed', value: 0 },
+      { id: 'tip', name: 'Bahşiş (Tip)', type: 'fixed', value: 0 },
+    ],
+    deductions_details: [
+      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 },
+      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 },
+      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 },
+      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 },
+      { id: 'advance', name: 'Avans Kesintisi', type: 'fixed', value: 0 },
+    ]
+  },
+  { 
+    id: 102, 
+    employeeId: 2, 
+    period: 'Ocak 2026', 
+    base_salary: 110000, 
+    net: 82500, 
+    status: 'Processing',
+    earnings_details: [
+      { id: 'bonus', name: 'İkramiye / Bonus', type: 'fixed', value: 0 },
+      { id: 'overtime', name: 'Fazla Mesai', type: 'fixed', value: 0 },
+      { id: 'commission', name: 'Komisyon', type: 'fixed', value: 0 },
+      { id: 'premium', name: 'Prim', type: 'fixed', value: 0 },
+      { id: 'tip', name: 'Bahşiş (Tip)', type: 'fixed', value: 0 },
+    ],
+    deductions_details: [
+      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 },
+      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 },
+      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 },
+      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 },
+      { id: 'advance', name: 'Avans Kesintisi', type: 'fixed', value: 0 },
+    ]
+  },
+  { 
+    id: 103, 
+    employeeId: 3, 
+    period: 'Ocak 2026', 
+    base_salary: 88000, 
+    net: 66000, 
+    status: 'Paid',
+    earnings_details: [
+      { id: 'bonus', name: 'İkramiye / Bonus', type: 'fixed', value: 800 },
+      { id: 'overtime', name: 'Fazla Mesai', type: 'fixed', value: 500 },
+      { id: 'commission', name: 'Komisyon', type: 'fixed', value: 1500 },
+      { id: 'premium', name: 'Prim', type: 'fixed', value: 0 },
+      { id: 'tip', name: 'Bahşiş (Tip)', type: 'fixed', value: 0 },
+    ],
+    deductions_details: [
+      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 },
+      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 },
+      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 },
+      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 },
+      { id: 'advance', name: 'Ek Kesinti', type: 'fixed', value: 2100 },
+    ]
+  },
+  { 
+    id: 104, 
+    employeeId: 4, 
+    period: 'Ocak 2026', 
+    base_salary: 75000, 
+    net: 56250, 
+    status: 'Processing',
+    earnings_details: [
+      { id: 'bonus', name: 'İkramiye / Bonus', type: 'fixed', value: 0 },
+      { id: 'overtime', name: 'Fazla Mesai', type: 'fixed', value: 0 },
+      { id: 'commission', name: 'Komisyon', type: 'fixed', value: 0 },
+      { id: 'premium', name: 'Prim', type: 'fixed', value: 0 },
+      { id: 'tip', name: 'Bahşiş (Tip)', type: 'fixed', value: 0 },
+    ],
+    deductions_details: [
+      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 },
+      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 },
+      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 },
+      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 },
+      { id: 'advance', name: 'Avans Kesintisi', type: 'fixed', value: 0 },
+    ]
+  },
+  { 
+    id: 105, 
+    employeeId: 5, 
+    period: 'Ocak 2026', 
+    base_salary: 92000, 
+    net: 69000, 
+    status: 'Paid',
+    earnings_details: [
+      { id: 'bonus', name: 'İkramiye / Bonus', type: 'fixed', value: 0 },
+      { id: 'overtime', name: 'Fazla Mesai', type: 'fixed', value: 0 },
+      { id: 'commission', name: 'Komisyon', type: 'fixed', value: 0 },
+      { id: 'premium', name: 'Prim', type: 'fixed', value: 0 },
+      { id: 'tip', name: 'Bahşiş (Tip)', type: 'fixed', value: 0 },
+    ],
+    deductions_details: [
+      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 },
+      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 },
+      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 },
+      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 },
+      { id: 'advance', name: 'Avans Kesintisi', type: 'fixed', value: 0 },
+    ]
+  },
   
   // Geçmiş aylar
-  { id: 201, employeeId: 1, period: 'Aralık 2025', salary: 95000, net: 71250, status: 'Paid' },
-  { id: 202, employeeId: 2, period: 'Aralık 2025', salary: 110000, net: 82500, status: 'Paid' },
+  { 
+    id: 201, 
+    employeeId: 1, 
+    period: 'Aralık 2025', 
+    base_salary: 95000, 
+    net: 71250, 
+    status: 'Paid',
+    earnings_details: [
+      { id: 'bonus', name: 'İkramiye / Bonus', type: 'fixed', value: 0 },
+      { id: 'overtime', name: 'Fazla Mesai', type: 'fixed', value: 0 },
+      { id: 'commission', name: 'Komisyon', type: 'fixed', value: 0 },
+      { id: 'premium', name: 'Prim', type: 'fixed', value: 0 },
+      { id: 'tip', name: 'Bahşiş (Tip)', type: 'fixed', value: 0 },
+    ],
+    deductions_details: [
+      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 },
+      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 },
+      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 },
+      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 },
+      { id: 'advance', name: 'Avans Kesintisi', type: 'fixed', value: 0 },
+    ]
+  },
+  { 
+    id: 202, 
+    employeeId: 2, 
+    period: 'Aralık 2025', 
+    base_salary: 110000, 
+    net: 82500, 
+    status: 'Paid',
+    earnings_details: [
+      { id: 'bonus', name: 'İkramiye / Bonus', type: 'fixed', value: 0 },
+      { id: 'overtime', name: 'Fazla Mesai', type: 'fixed', value: 0 },
+      { id: 'commission', name: 'Komisyon', type: 'fixed', value: 0 },
+      { id: 'premium', name: 'Prim', type: 'fixed', value: 0 },
+      { id: 'tip', name: 'Bahşiş (Tip)', type: 'fixed', value: 0 },
+    ],
+    deductions_details: [
+      { id: 'sgk', name: 'SGK İşçi Payı', type: 'percent', value: 14 },
+      { id: 'unemployment', name: 'İşsizlik Sigortası', type: 'percent', value: 1 },
+      { id: 'income_tax', name: 'Gelir Vergisi', type: 'percent', value: 15 },
+      { id: 'stamp_tax', name: 'Damga Vergisi', type: 'percent', value: 0.759 },
+      { id: 'advance', name: 'Avans Kesintisi', type: 'fixed', value: 0 },
+    ]
+  },
 ];
 
 // --- BİLDİRİM VERİLERİ ---

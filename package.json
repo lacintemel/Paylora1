@@ -21,6 +21,7 @@
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.2.0",
     "react-hot-toast": "^2.6.0",
+    "supabase": "^2.72.9",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
