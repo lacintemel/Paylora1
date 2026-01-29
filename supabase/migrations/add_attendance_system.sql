@@ -30,7 +30,8 @@ ALTER TABLE payrolls
 ADD COLUMN IF NOT EXISTS worked_days DECIMAL(5, 2) DEFAULT 20,
 ADD COLUMN IF NOT EXISTS worked_hours DECIMAL(7, 2) DEFAULT 160,
 ADD COLUMN IF NOT EXISTS hourly_rate DECIMAL(10, 2),
-ADD COLUMN IF NOT EXISTS attendance_notes TEXT;
+ADD COLUMN IF NOT EXISTS attendance_notes TEXT,
+ADD COLUMN IF NOT EXISTS leave_details JSONB DEFAULT '[]'::jsonb;
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_date ON attendance(employee_id, date);
@@ -104,27 +105,12 @@ $$ LANGUAGE plpgsql;
 -- MOCK DATA - Sınama İçin Örnek Veriler
 -- ==========================================
 
--- Mock Clock In/Out Verileri (Ocak 2026 - Her gün 8 saat)
-INSERT INTO attendance (employee_id, clock_in, clock_out, worked_hours, date, notes)
-SELECT 
-  e.id,
-  (DATE '2026-01-01' + (i || ' days')::INTERVAL)::timestamp + INTERVAL '9 hours',
-  (DATE '2026-01-01' + (i || ' days')::INTERVAL)::timestamp + INTERVAL '17 hours',
-  8.0,
-  DATE '2026-01-01' + (i || ' days')::INTERVAL,
-  'Düzenli çalışma günü'
-FROM employees e
-CROSS JOIN GENERATE_SERIES(0, 19) AS i
-WHERE EXTRACT(DOW FROM DATE '2026-01-01' + (i || ' days')::INTERVAL) NOT IN (0, 6)
-ON CONFLICT DO NOTHING;
-
--- Mock Leave Records (İzin Kayıtları) - Ocak 2026 içinde
--- Her çalışana 2 farklı izin tipi ekle
+-- Mock Leave Records (İzin Kayıtları) - Ocak 2026 içinde (Önce izinleri ekle)
 WITH employee_leaves AS (
   SELECT 
     e.id as employee_id,
     e.name,
-    'Yillik Izin' as leave_type,
+    'annual' as leave_type,
     DATE '2026-01-15' as start_date,
     DATE '2026-01-17' as end_date,
     3.0 as days,
@@ -135,7 +121,7 @@ WITH employee_leaves AS (
   SELECT 
     e.id as employee_id,
     e.name,
-    'Hastalik Izni' as leave_type,
+    'sick' as leave_type,
     DATE '2026-01-08' as start_date,
     DATE '2026-01-09' as end_date,
     2.0 as days,
@@ -147,4 +133,103 @@ WITH employee_leaves AS (
 INSERT INTO leave_records (employee_id, leave_type, start_date, end_date, days, status, reason)
 SELECT employee_id, leave_type, start_date, end_date, days, status, reason
 FROM employee_leaves
+ON CONFLICT DO NOTHING;
+
+-- Mock Clock In/Out Verileri (Ocak 2026 - Her gün 8 saat)
+-- İzin günleri hariç
+INSERT INTO attendance (employee_id, clock_in, clock_out, worked_hours, date, notes)
+SELECT 
+  e.id,
+  (DATE '2026-01-01' + (i || ' days')::INTERVAL)::timestamp + INTERVAL '9 hours',
+  (DATE '2026-01-01' + (i || ' days')::INTERVAL)::timestamp + INTERVAL '17 hours',
+  8.0,
+  DATE '2026-01-01' + (i || ' days')::INTERVAL,
+  'Düzenli çalışma günü'
+FROM employees e
+CROSS JOIN GENERATE_SERIES(0, 19) AS i
+WHERE EXTRACT(DOW FROM DATE '2026-01-01' + (i || ' days')::INTERVAL) NOT IN (0, 6)  -- Hafta sonu hariç
+  AND CASE 
+       WHEN (e.name ILIKE '%demir%' OR e.name ILIKE '%yilmaz%') THEN
+         (DATE '2026-01-01' + (i || ' days')::INTERVAL) NOT BETWEEN DATE '2026-01-08' AND DATE '2026-01-09'  -- Hastalık izni
+         AND (DATE '2026-01-01' + (i || ' days')::INTERVAL) NOT BETWEEN DATE '2026-01-15' AND DATE '2026-01-17'  -- Yıllık izin
+       ELSE TRUE
+     END
+ON CONFLICT DO NOTHING;
+
+-- Mock Payroll Verileri (Aralık 2025 - Eski bordro)
+INSERT INTO payrolls (employee_id, period, base_salary, worked_days, worked_hours, hourly_rate, 
+                      earnings_details, deductions_details, leave_details, status, notes, net_pay)
+SELECT 
+  e.id,
+  '2025-12',
+  e.salary,
+  20,
+  160,
+  ROUND((e.salary / 160)::numeric, 2),
+  jsonb_build_array(
+    jsonb_build_object('id', 'bonus', 'name', 'İkramiye / Bonus', 'type', 'fixed', 'value', 0),
+    jsonb_build_object('id', 'overtime', 'name', 'Fazla Mesai', 'type', 'fixed', 'value', 0),
+    jsonb_build_object('id', 'commission', 'name', 'Komisyon', 'type', 'fixed', 'value', 0),
+    jsonb_build_object('id', 'premium', 'name', 'Prim', 'type', 'fixed', 'value', 0),
+    jsonb_build_object('id', 'tip', 'name', 'Bahşiş (Tip)', 'type', 'fixed', 'value', 0)
+  ),
+  jsonb_build_array(
+    jsonb_build_object('id', 'sgk', 'name', 'SGK İşçi Payı', 'type', 'percent', 'value', 14),
+    jsonb_build_object('id', 'unemployment', 'name', 'İşsizlik Sigortası', 'type', 'percent', 'value', 1),
+    jsonb_build_object('id', 'income_tax', 'name', 'Gelir Vergisi', 'type', 'percent', 'value', 15),
+    jsonb_build_object('id', 'stamp_tax', 'name', 'Damga Vergisi', 'type', 'percent', 'value', 0.759),
+    jsonb_build_object('id', 'advance', 'name', 'Avans Kesintisi', 'type', 'fixed', 'value', 0)
+  ),
+  '[]'::jsonb,
+  'Approved',
+  'Aralık 2025 bordrosu',
+  ROUND((e.salary - (e.salary * 0.14) - (e.salary * 0.01) - (e.salary * 0.15) - (e.salary * 0.00759))::numeric, 2)
+FROM employees e
+ON CONFLICT DO NOTHING;
+
+-- Mock Payroll Verileri (Ocak 2026 - Güncel bordro - Pending durumu)
+-- Attendance verisini kullanarak hesaplanan bordro
+INSERT INTO payrolls (employee_id, period, base_salary, worked_days, worked_hours, hourly_rate, 
+                      earnings_details, deductions_details, leave_details, status, notes, net_pay)
+SELECT 
+  e.id,
+  '2026-01',
+  e.salary,
+  (SELECT COUNT(DISTINCT date) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31'),
+  (SELECT COALESCE(SUM(worked_hours), 0) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31'),
+  ROUND((e.salary / 160)::numeric, 2),
+  jsonb_build_array(
+    jsonb_build_object('id', 'bonus', 'name', 'İkramiye / Bonus', 'type', 'fixed', 'value', 0),
+    jsonb_build_object('id', 'overtime', 'name', 'Fazla Mesai', 'type', 'fixed', 'value', 0),
+    jsonb_build_object('id', 'commission', 'name', 'Komisyon', 'type', 'fixed', 'value', 0),
+    jsonb_build_object('id', 'premium', 'name', 'Prim', 'type', 'fixed', 'value', 0),
+    jsonb_build_object('id', 'tip', 'name', 'Bahşiş (Tip)', 'type', 'fixed', 'value', 0)
+  ),
+  jsonb_build_array(
+    jsonb_build_object('id', 'sgk', 'name', 'SGK İşçi Payı', 'type', 'percent', 'value', 14),
+    jsonb_build_object('id', 'unemployment', 'name', 'İşsizlik Sigortası', 'type', 'percent', 'value', 1),
+    jsonb_build_object('id', 'income_tax', 'name', 'Gelir Vergisi', 'type', 'percent', 'value', 15),
+    jsonb_build_object('id', 'stamp_tax', 'name', 'Damga Vergisi', 'type', 'percent', 'value', 0.759),
+    jsonb_build_object('id', 'advance', 'name', 'Avans Kesintisi', 'type', 'fixed', 'value', 0)
+  ),
+  COALESCE(
+    (SELECT jsonb_agg(jsonb_build_object('leave_type', leave_type, 'days', days))
+     FROM leave_records lr
+     WHERE lr.employee_id = e.id
+       AND lr.status = 'Approved'
+       AND lr.start_date <= '2026-01-31'
+       AND lr.end_date >= '2026-01-01'),
+    '[]'::jsonb
+  ),
+  'Pending',
+  'Ocak 2026 - Otomatik oluşturuldu',
+  ROUND((
+    (SELECT COALESCE(SUM(worked_hours), 160) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31')
+    * (e.salary / 160)
+    - ((SELECT COALESCE(SUM(worked_hours), 160) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31') * (e.salary / 160) * 0.14)
+    - ((SELECT COALESCE(SUM(worked_hours), 160) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31') * (e.salary / 160) * 0.01)
+    - ((SELECT COALESCE(SUM(worked_hours), 160) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31') * (e.salary / 160) * 0.15)
+    - ((SELECT COALESCE(SUM(worked_hours), 160) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31') * (e.salary / 160) * 0.00759)
+  )::numeric, 2)
+FROM employees e
 ON CONFLICT DO NOTHING;
