@@ -7,8 +7,9 @@ import {
     ChevronLeft, ChevronRight, Download
 } from 'lucide-react';
 import { getInitials, isValidImageUrl } from '../utils/avatarHelper';
-import { exportPayrollToPDF } from '../utils/exportUtils';
+import { exportPayrollToPDF, exportPayrollToPDF_Summary, exportPayrollToPDF_Detailed } from '../utils/exportUtils';
 import { showSuccess, showError } from '../utils/toast';
+import { calculateWorkedHoursForPeriod, getApprovedLeavesForPeriod, calculateCompletePayroll, updatePayrollWithAttendance, recordAttendance } from '../utils/attendanceUtils';
 
 export default function Payroll({ userRole, currentUserId }) {
   const [payrolls, setPayrolls] = useState([]);
@@ -27,6 +28,10 @@ export default function Payroll({ userRole, currentUserId }) {
   const [deductionsList, setDeductionsList] = useState([]);
   const [note, setNote] = useState('');
   const [editingItem, setEditingItem] = useState(null); // Seçili item: {type: 'earnings'|'deductions', index: number}
+
+  // EXPORT DIALOG STATE
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportMode, setExportMode] = useState(null); // 'bulk' veya 'single'
 
   const isManager = ['general_manager', 'hr'].includes(userRole);
 
@@ -216,19 +221,35 @@ export default function Payroll({ userRole, currentUserId }) {
   };
 
   // --- MODAL AÇMA VE VERİ HAZIRLAMA ---
-  const openDetailModal = (payroll) => {
-      console.log('Opening payroll:', payroll);
-      console.log('Base salary:', payroll.base_salary);
-      console.log('Earnings:', payroll.earnings_details);
-      console.log('Deductions:', payroll.deductions_details);
-      
-      setSelectedPayroll(payroll);
-      setBaseSalary(payroll.base_salary || payroll.employees?.salary || 0);
-      setEarningsList(payroll.earnings_details && payroll.earnings_details.length > 0 ? payroll.earnings_details : DEFAULT_EARNINGS);
-      setDeductionsList(payroll.deductions_details && payroll.deductions_details.length > 0 ? payroll.deductions_details : DEFAULT_DEDUCTIONS);
-      setNote(payroll.notes || '');
-      setEditingItem(null);
-      setIsDetailOpen(true);
+  const openDetailModal = async (payroll) => {
+      try {
+        // Attendance verilerini çek
+        const attendanceResult = await calculateWorkedHoursForPeriod(payroll.employee_id, selectedMonth);
+        const leaveRecords = await getApprovedLeavesForPeriod(payroll.employee_id, selectedMonth);
+        
+        // Attendance stats'ı ayarla
+        setAttendanceStats({
+          days: attendanceResult.worked_days || payroll.worked_days || 20,
+          hours: attendanceResult.worked_hours || payroll.worked_hours || 160,
+          overtime: Math.max(0, (attendanceResult.worked_hours || 0) - 160),
+          leaves: leaveRecords
+        });
+        
+        console.log('Opening payroll:', payroll);
+        console.log('Attendance data:', attendanceResult);
+        console.log('Leave records:', leaveRecords);
+        
+        setSelectedPayroll(payroll);
+        setBaseSalary(payroll.base_salary || payroll.employees?.salary || 0);
+        setEarningsList(payroll.earnings_details && payroll.earnings_details.length > 0 ? payroll.earnings_details : DEFAULT_EARNINGS);
+        setDeductionsList(payroll.deductions_details && payroll.deductions_details.length > 0 ? payroll.deductions_details : DEFAULT_DEDUCTIONS);
+        setNote(payroll.notes || '');
+        setEditingItem(null);
+        setIsDetailOpen(true);
+      } catch (error) {
+        console.error('Modal açma hatası:', error);
+        showError('Veriler yüklenemedi: ' + error.message);
+      }
   };
 
   // --- DİNAMİK LİSTE YÖNETİMİ ---
@@ -263,7 +284,7 @@ export default function Payroll({ userRole, currentUserId }) {
          </div>
             <div className="flex gap-3 items-center">
                  {isManager && <button onClick={generatePayrollsForMonth} className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex gap-2"><Plus className="w-4 h-4"/> Oluştur</button>}
-                 <button onClick={() => { exportPayrollToPDF(filteredPayrolls, selectedMonth); showSuccess('Bordro raporu PDF olarak indirildi!'); }} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex gap-2"><Download className="w-4 h-4"/> İndir</button>
+                 <button onClick={() => { setExportMode('bulk'); setIsExportDialogOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex gap-2"><Download className="w-4 h-4"/> İndir</button>
                  <div className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2 shadow-sm">
                      <button onClick={() => shiftMonth(-1)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" aria-label="Önceki ay">
                          <ChevronLeft className="w-4 h-4" />
@@ -381,15 +402,71 @@ export default function Payroll({ userRole, currentUserId }) {
                             </div>
                         </div>
                     </div>
-                    <div className="text-right">
-                        <div className="text-xs text-gray-500 font-bold uppercase">NET ÖDENECEK</div>
-                        <div className="text-3xl font-black text-gray-900 transition-all duration-300">
-                            ${calculateEditorTotals().net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <div className="text-right flex flex-col items-end gap-3">
+                        <div>
+                            <div className="text-xs text-gray-500 font-bold uppercase">NET ÖDENECEK</div>
+                            <div className="text-3xl font-black text-gray-900 transition-all duration-300">
+                                ${calculateEditorTotals().net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
                         </div>
+                        <button 
+                            onClick={() => {
+                              setExportMode('single');
+                              setIsExportDialogOpen(true);
+                            }}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors"
+                        >
+                            <Download className="w-4 h-4"/> PDF İndir
+                        </button>
                     </div>
                 </div>
 
                         <div className="p-8 space-y-8" onClick={() => setEditingItem(null)}>
+                    
+                    {/* 0. ÇALIŞMA GÜNLERİ VE SAATLER */}
+                    <div className="grid grid-cols-4 gap-4 bg-gradient-to-r from-cyan-50 to-blue-50 p-6 rounded-xl border border-cyan-200">
+                        <div className="text-center">
+                            <div className="text-2xl font-black text-cyan-900">
+                                {attendanceStats.days || 20}
+                            </div>
+                            <div className="text-xs text-cyan-700 font-bold mt-1">Çalışma Günü</div>
+                        </div>
+                        <div className="text-center border-l border-r border-cyan-300">
+                            <div className="text-2xl font-black text-blue-900">
+                                {attendanceStats.hours || 160}
+                            </div>
+                            <div className="text-xs text-blue-700 font-bold mt-1">Çalışılan Saat</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-2xl font-black text-orange-900">
+                                {attendanceStats.overtime || 0}
+                            </div>
+                            <div className="text-xs text-orange-700 font-bold mt-1">Fazla Mesai</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-2xl font-black text-purple-900">
+                                {attendanceStats.leaves?.length || 0}
+                            </div>
+                            <div className="text-xs text-purple-700 font-bold mt-1">İzin Türü</div>
+                        </div>
+                    </div>
+                    
+                    {/* İZİN DETAYLARI */}
+                    {attendanceStats.leaves && attendanceStats.leaves.length > 0 && (
+                      <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100">
+                        <div className="font-bold text-purple-800 mb-3 flex items-center gap-2">
+                          <Calendar className="w-4 h-4"/> İzin Detayları
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {attendanceStats.leaves.map((leave, idx) => (
+                            <div key={idx} className="bg-white/70 p-2 rounded-lg text-xs">
+                              <div className="font-bold text-purple-800">{leave.leave_type || 'İzin'}</div>
+                              <div className="text-purple-700">{leave.days} gün</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     
                     {/* 1. YILLIK VE AYLIK MAAŞ */}
                     <div className="grid grid-cols-2 gap-4">
@@ -631,6 +708,72 @@ export default function Payroll({ userRole, currentUserId }) {
           </div>
       )}
 
+      {/* --- EXPORT FORMAT SECIM DIYALOGU --- */}
+      {isExportDialogOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">PDF Format Sec</h2>
+            <p className="text-gray-600 mb-6">
+              {exportMode === 'bulk' 
+                ? 'Tum bordrolari hangi formatta indirmek istiyorsunuz?' 
+                : 'Bu bordroyu hangi formatta indirmek istiyorsunuz?'}
+            </p>
+            
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setIsExportDialogOpen(false);
+                  if (exportMode === 'bulk') {
+                    exportPayrollToPDF_Summary(payrolls, selectedMonth);
+                  } else {
+                    const singlePayroll = { 
+                      ...selectedPayroll, 
+                      base_salary: baseSalary,
+                      earnings_details: earningsList,
+                      deductions_details: deductionsList
+                    };
+                    exportPayrollToPDF_Summary([singlePayroll], selectedMonth);
+                  }
+                  showSuccess('Ozet PDF indirildi!');
+                }}
+                className="w-full bg-green-100 border-2 border-green-400 text-green-800 px-6 py-3 rounded-lg font-bold hover:bg-green-200 transition-colors text-left"
+              >
+                <div className="font-bold">Ozet Format</div>
+                <div className="text-sm text-green-700">Tablo halinde kisa bilgi</div>
+              </button>
+              
+              <button
+                onClick={() => {
+                  setIsExportDialogOpen(false);
+                  if (exportMode === 'bulk') {
+                    exportPayrollToPDF_Detailed(payrolls, selectedMonth);
+                  } else {
+                    const singlePayroll = { 
+                      ...selectedPayroll, 
+                      base_salary: baseSalary,
+                      earnings_details: earningsList,
+                      deductions_details: deductionsList
+                    };
+                    exportPayrollToPDF_Detailed([singlePayroll], selectedMonth);
+                  }
+                  showSuccess('Detayli PDF indirildi!');
+                }}
+                className="w-full bg-blue-100 border-2 border-blue-400 text-blue-800 px-6 py-3 rounded-lg font-bold hover:bg-blue-200 transition-colors text-left"
+              >
+                <div className="font-bold">Detayli Format</div>
+                <div className="text-sm text-blue-700">Tum kesintiler ve kazanclar</div>
+              </button>
+              
+              <button
+                onClick={() => setIsExportDialogOpen(false)}
+                className="w-full bg-gray-200 text-gray-800 px-6 py-3 rounded-lg font-bold hover:bg-gray-300 transition-colors"
+              >
+                Iptal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { Play, Square, Clock, CalendarCheck, CheckCircle2, History } from 'lucide-react';
 import { showSuccess, showError } from '../utils/toast';
+import { recordAttendance } from '../utils/attendanceUtils';
 
 export default function TimeTracking({ currentUserId, userRole }) {
   const [logs, setLogs] = useState([]);
@@ -9,6 +10,7 @@ export default function TimeTracking({ currentUserId, userRole }) {
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [todayLogId, setTodayLogId] = useState(null);
   const [startTime, setStartTime] = useState(null); // Süre hesabı için giriş saatini tutalım
+  const [elapsedTime, setElapsedTime] = useState(0); // Geçen süre (saniye cinsinden)
 
   // Verileri Çek
   useEffect(() => {
@@ -18,24 +20,37 @@ export default function TimeTracking({ currentUserId, userRole }) {
     }
   }, [currentUserId, userRole]);
 
+  // Geçen zamanı güncelle (her saniye)
+  useEffect(() => {
+    let interval;
+    if (isCheckedIn && startTime) {
+      interval = setInterval(() => {
+        const now = new Date();
+        const elapsed = Math.floor((now - startTime) / 1000);
+        setElapsedTime(elapsed);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isCheckedIn, startTime]);
+
   // Bugün giriş yapmış mı kontrol et
   const checkTodayStatus = async () => {
     const today = new Date().toISOString().split('T')[0];
     const { data } = await supabase
-      .from('time_logs')
+      .from('attendance')
       .select('*')
       .eq('employee_id', currentUserId)
       .eq('date', today)
-      .order('created_at', { ascending: false }) // En son kaydı al
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (data) {
       setTodayLogId(data.id);
       // Eğer çıkış saati yoksa hala içeridedir
-      const stillInside = !data.check_out;
+      const stillInside = !data.clock_out;
       setIsCheckedIn(stillInside);
-      if (stillInside) setStartTime(new Date(data.check_in));
+      if (stillInside) setStartTime(new Date(data.clock_in));
     }
   };
 
@@ -43,13 +58,13 @@ export default function TimeTracking({ currentUserId, userRole }) {
     setLoading(true);
     try {
       let query = supabase
-        .from('time_logs')
+        .from('attendance')
         .select(`
             *,
             employees:employee_id (name, avatar, department)
         `)
-        .order('date', { ascending: false }) // En yeni tarih en üstte
-        .order('check_in', { ascending: false }); // Aynı gün içindeki en yeni saat
+        .order('date', { ascending: false })
+        .order('clock_in', { ascending: false });
 
       // 🔒 GÜVENLİK: Çalışan sadece kendini görsün, Yönetici herkesi
       if (userRole === 'employee') {
@@ -66,68 +81,51 @@ export default function TimeTracking({ currentUserId, userRole }) {
     }
   };
 
-  // --- 🟢 GİRİŞ YAP (DÜZELTİLDİ) ---
+  // --- 🟢 GİRİŞ YAP ---
   const handleCheckIn = async () => {
-    const now = new Date();
-    const dateString = now.toISOString().split('T')[0]; // YYYY-MM-DD
-
     try {
-      // ⚠️ DÜZELTME: Sadece saat değil, tam ISO formatı gönderiyoruz.
-      const { data, error } = await supabase
-        .from('time_logs')
-        .insert({
-          employee_id: currentUserId,
-          date: dateString,
-          check_in: now.toISOString(), // 👈 HATA BURADA ÇÖZÜLDÜ
-          status: 'Present'
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+      const result = await recordAttendance(currentUserId, 'in');
       
-      setTodayLogId(data.id);
-      setStartTime(now);
-      setIsCheckedIn(true);
-      fetchLogs();
-      showSuccess('Günaydın! Mesaiye başladınız.');
+      if (result.success) {
+        setIsCheckedIn(true);
+        setStartTime(new Date());
+        setElapsedTime(0);
+        fetchLogs();
+        checkTodayStatus();
+        showSuccess('Günaydın! Mesaiye başladınız.');
+      } else {
+        throw new Error(result.error);
+      }
     } catch (err) {
       showError("Giriş hatası: " + err.message);
     }
   };
 
-  // --- 🔴 ÇIKIŞ YAP (DÜZELTİLDİ) ---
+  // --- 🔴 ÇIKIŞ YAP ---
   const handleCheckOut = async () => {
-    if (!todayLogId) return;
-    const now = new Date();
-
     try {
-      // Süre hesabı (Dakika cinsinden)
-      let duration = 0;
-      if (startTime) {
-          const diffMs = now - startTime;
-          duration = Math.floor(diffMs / 60000);
+      const result = await recordAttendance(currentUserId, 'out');
+      
+      if (result.success) {
+        setIsCheckedIn(false);
+        setStartTime(null);
+        setElapsedTime(0);
+        fetchLogs();
+        checkTodayStatus();
+        showSuccess('Çıkış yapıldı! İyi günler.');
+      } else {
+        throw new Error(result.error);
       }
-
-      // ⚠️ DÜZELTME: Çıkış saati de ISO formatında olmalı
-      const { error } = await supabase
-        .from('time_logs')
-        .update({
-          check_out: now.toISOString(), // 👈 HATA BURADA ÇÖZÜLDÜ
-          status: 'Completed',
-          duration_minutes: duration // Eğer tablonda bu sütun varsa kaydeder
-        })
-        .eq('id', todayLogId);
-
-      if (error) throw error;
-
-      setIsCheckedIn(false);
-      setStartTime(null);
-      fetchLogs();
-      showSuccess('Çıkış yapıldı! İyi günler.');
     } catch (err) {
       showError("Çıkış hatası: " + err.message);
     }
+  };
+
+  // Geçen zamanı formatla
+  const formatElapsedTime = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}s ${minutes}d`;
   };
 
   // Tabloda saati düzgün göstermek için yardımcı fonksiyon
@@ -217,23 +215,25 @@ export default function TimeTracking({ currentUserId, userRole }) {
                         </td>
                         <td className="px-6 py-4 text-green-700 font-bold tabular-nums">
                             <span className="bg-green-50 px-2 py-1 rounded">
-                                {formatTime(log.check_in)}
+                                {formatTime(log.clock_in)}
                             </span>
                         </td>
-                        <td className="px-6 py-4 text-red-600 font-bold tabular-nums">
+                        <td className="px-6 py-4 text-red-700 font-bold tabular-nums">
                             <span className="bg-red-50 px-2 py-1 rounded">
-                                {formatTime(log.check_out)}
+                                {formatTime(log.clock_out)}
                             </span>
                         </td>
                         <td className="px-6 py-4">
-                            {log.check_out ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">
-                                <CheckCircle2 className="w-3 h-3"/> Tamamlandı
-                                </span>
+                            {log.clock_out ? (
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-green-600"/>
+                                    <span className="text-green-700 font-bold">{log.worked_hours ? log.worked_hours.toFixed(1) + 's' : 'Tamamlandı'}</span>
+                                </div>
                             ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-600 border border-blue-100 animate-pulse">
-                                <Clock className="w-3 h-3"/> Çalışıyor...
-                                </span>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+                                    <span className="text-blue-700 font-bold">{formatElapsedTime(elapsedTime)}</span>
+                                </div>
                             )}
                         </td>
                     </tr>
