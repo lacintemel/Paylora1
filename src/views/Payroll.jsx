@@ -93,31 +93,82 @@ export default function Payroll({ userRole, currentUserId }) {
       return item.type === 'percent' ? (salary * val) / 100 : val;
   };
 
-  // 2. Tablo Satırı İçin Özet Hesapla (JSON verisinden)
+  // Yıllık maaşı aylığa çevir
+  const getMonthlyBaseSalary = (annualSalary) => (parseFloat(annualSalary) || 0) / 12;
+
+  // 2. Tablo Satırı İçin Özet Hesapla (Database'deki worked_hours kullanarak)
   const calculateRowSummary = (payroll) => {
       const base = payroll.base_salary || 0;
-      // JSON listelerini topla
-      const totalEarnings = (payroll.earnings_details || []).reduce((acc, item) => acc + calculateItemAmount(item, base), 0);
-      const totalDeductions = (payroll.deductions_details || []).reduce((acc, item) => acc + calculateItemAmount(item, base), 0);
+      const monthlyBase = getMonthlyBaseSalary(base);
+      
+      // Eğer worked_hours varsa onu kullan, yoksa 160 (tam ay)
+      const workedHours = payroll.worked_hours || 160;
+      const hourlyRate = monthlyBase / 160;
+      const grossSalary = workedHours * hourlyRate;
+      
+      // JSON listelerini topla (brüt maaş üzerinden)
+      const totalEarnings = (payroll.earnings_details || []).reduce((acc, item) => acc + calculateItemAmount(item, grossSalary), 0);
+      
+      let legalDeductions = 0;
+      let specialDeductions = 0;
+      
+      if (payroll.deductions_details && payroll.deductions_details.length > 0) {
+        payroll.deductions_details.forEach(item => {
+          const isLegal = ['SGK', 'Vergi', 'Gelir', 'Damga', 'Issizlik'].some(word => item.name.includes(word));
+          const amount = calculateItemAmount(item, grossSalary);
+          if (isLegal) {
+            legalDeductions += amount;
+          } else {
+            specialDeductions += amount;
+          }
+        });
+      }
+      
+      const totalDeductions = legalDeductions + specialDeductions;
+      const net = grossSalary + totalEarnings - totalDeductions;
       
       return {
+          gross: grossSalary,
           totalEarnings,
+          legalDeductions,
+          specialDeductions,
           totalDeductions,
-          net: base + totalEarnings - totalDeductions
+          net
       };
   };
 
   // 3. Editör Modalı İçin Canlı Hesapla (State verisinden)
   const calculateEditorTotals = () => {
-      const gross = parseFloat(baseSalary) || 0;
+      const monthlyBase = getMonthlyBaseSalary(baseSalary);
+      const hourlyRate = monthlyBase / 160 || 0;
+      const workedHours = attendanceStats.hours || 160;
+      const gross = workedHours * hourlyRate;
+      
       const totalEarnings = earningsList.reduce((acc, item) => acc + calculateItemAmount(item, gross), 0);
-      const totalDeductions = deductionsList.reduce((acc, item) => acc + calculateItemAmount(item, gross), 0);
+      
+      let legalDeductions = 0;
+      let specialDeductions = 0;
+      
+      deductionsList.forEach(item => {
+        const isLegal = ['SGK', 'Vergi', 'Gelir', 'Damga', 'Issizlik'].some(word => item.name.includes(word));
+        const amount = calculateItemAmount(item, gross);
+        if (isLegal) {
+          legalDeductions += amount;
+        } else {
+          specialDeductions += amount;
+        }
+      });
+      
+      const totalDeductions = legalDeductions + specialDeductions;
+      const net = gross + totalEarnings - totalDeductions;
       
       return {
           gross,
           totalEarnings,
+          legalDeductions,
+          specialDeductions,
           totalDeductions,
-          net: gross + totalEarnings - totalDeductions
+          net
       };
   };
 
@@ -165,7 +216,7 @@ export default function Payroll({ userRole, currentUserId }) {
       } catch (error) { showError("Hata: " + error.message); }
   };
 
-  // Otomatik Oluşturucu
+  // Otomatik Oluşturucu - Attendance ve Leave verisiyle bordro hesapla
   const generatePayrollsForMonth = async () => {
     if (!confirm("Otomatik bordro oluşturulsun mu?")) return;
     setLoading(true);
@@ -174,6 +225,68 @@ export default function Payroll({ userRole, currentUserId }) {
         console.log('Çalışanlar:', employees);
         
         for (const emp of employees) {
+            // Attendance verilerini çek
+            const attendanceResult = await calculateWorkedHoursForPeriod(emp.id, selectedMonth);
+            const leaveRecords = await getApprovedLeavesForPeriod(emp.id, selectedMonth);
+            
+            // Çalışılan saat ve gün
+            const workedHours = attendanceResult.worked_hours || 0;
+            const workedDays = attendanceResult.worked_days || 0;
+            
+            // İzin günlerini hesapla
+            const totalLeaveDays = leaveRecords.reduce((sum, leave) => sum + (leave.days || 0), 0);
+            
+            // Saatlik ücret hesapla (Yıllık maaş / 12 / 160 saat)
+            const monthlyBase = getMonthlyBaseSalary(emp.salary || 0);
+            const hourlyRate = monthlyBase / 160;
+            
+            // Brüt maaş = Saatlik ücret × Çalışılan saat
+            const grossSalary = workedHours * hourlyRate;
+            
+            // Kesintileri hesapla
+            const calculateItemAmount = (item, salary) => {
+              const val = parseFloat(item.value) || 0;
+              return item.type === 'percent' ? (salary * val) / 100 : val;
+            };
+            
+            let legalDeductions = 0;
+            let specialDeductions = 0;
+            
+            DEFAULT_DEDUCTIONS.forEach(item => {
+              const isLegal = ['SGK', 'Vergi', 'Gelir', 'Damga', 'Issizlik'].some(word => item.name.includes(word));
+              const amount = calculateItemAmount(item, grossSalary);
+              
+              if (isLegal) {
+                legalDeductions += amount;
+              } else {
+                specialDeductions += amount;
+              }
+            });
+            
+            // Kazançlar
+            const totalEarnings = DEFAULT_EARNINGS.reduce((sum, item) => sum + calculateItemAmount(item, grossSalary), 0);
+            
+            // Net maaş
+            const netPay = grossSalary + totalEarnings - (legalDeductions + specialDeductions);
+            
+            // Bordro verisini hazırla
+            const payrollData = {
+                employee_id: emp.id,
+                period: selectedMonth,
+                base_salary: emp.salary,
+                worked_days: workedDays,
+                worked_hours: workedHours,
+                hourly_rate: parseFloat(hourlyRate.toFixed(2)),
+                earnings_details: DEFAULT_EARNINGS,
+                deductions_details: DEFAULT_DEDUCTIONS,
+                leave_details: leaveRecords,
+                attendance_notes: `${workedDays} gün, ${workedHours} saat çalışıldı. ${totalLeaveDays} gün izin kullanıldı.`,
+                status: 'Pending',
+                net_pay: parseFloat(netPay.toFixed(2))
+            };
+            
+            console.log(`${emp.name} için bordro:`, payrollData);
+            
             // Önce bak, varsa güncelle, yoksa ekle
             const { data: existing } = await supabase
                 .from('payrolls')
@@ -181,18 +294,6 @@ export default function Payroll({ userRole, currentUserId }) {
                 .eq('employee_id', emp.id)
                 .eq('period', selectedMonth)
                 .single();
-            
-            const payrollData = {
-                employee_id: emp.id,
-                period: selectedMonth,
-                base_salary: emp.salary,
-                status: 'Pending',
-                earnings_details: DEFAULT_EARNINGS,
-                deductions_details: DEFAULT_DEDUCTIONS,
-                net_pay: emp.salary * 0.70
-            };
-            
-            console.log(`${emp.name} için bordro:`, payrollData);
             
             if (existing) {
                 // Güncelle
@@ -211,7 +312,7 @@ export default function Payroll({ userRole, currentUserId }) {
         }
         
         fetchPayrolls();
-        showSuccess('Bordro başarıyla oluşturuldu!');
+        showSuccess('Bordro otomatik oluşturuldu! ✅ Attendance ve izin verileri kullanıldı.');
     } catch (error) { 
         console.error('Full error:', error);
         showError("Hata: " + error.message); 
@@ -324,7 +425,8 @@ export default function Payroll({ userRole, currentUserId }) {
                      
                      // 🔥 HER SATIR İÇİN ÖZETİ HESAPLA
                      const summary = calculateRowSummary(payroll);
-                     const annualSalary = parseInt((payroll.base_salary || 0) * 12); // Tam sayı - kuruş at
+                     const annualSalary = parseInt(payroll.base_salary || 0); // Tam sayı - kuruş at
+                     const monthlySalary = parseInt(getMonthlyBaseSalary(payroll.base_salary || 0));
 
                      return (
                      <tr key={payroll.id} className="hover:bg-gray-50/50 transition-colors">
@@ -338,7 +440,7 @@ export default function Payroll({ userRole, currentUserId }) {
                             </div>
                         </td>
                         <td className="p-4 text-sm font-medium text-purple-600">${annualSalary.toLocaleString()}</td>
-                        <td className="p-4 text-sm font-medium text-blue-600">${(payroll.base_salary||0).toLocaleString()}</td>
+                        <td className="p-4 text-sm font-medium text-blue-600">${monthlySalary.toLocaleString()}</td>
                         
                         {/* HESAPLANAN ÖZET DEĞERLER */}
                         <td className="p-4 text-sm font-medium text-green-600">
@@ -408,6 +510,9 @@ export default function Payroll({ userRole, currentUserId }) {
                             <div className="text-3xl font-black text-gray-900 transition-all duration-300">
                                 ${calculateEditorTotals().net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                                ({attendanceStats.days} gün × {(attendanceStats.hours / attendanceStats.days || 8).toFixed(0)} saat)
+                            </div>
                         </div>
                         <button 
                             onClick={() => {
@@ -475,7 +580,7 @@ export default function Payroll({ userRole, currentUserId }) {
                                 <DollarSign className="w-5 h-5"/> Yıllık Maaş
                             </div>
                             <div className="text-2xl font-black text-purple-900">
-                                ${parseInt(parseFloat(baseSalary) * 12).toLocaleString()}
+                              ${parseInt(parseFloat(baseSalary) || 0).toLocaleString()}
                             </div>
                         </div>
                         
@@ -486,13 +591,13 @@ export default function Payroll({ userRole, currentUserId }) {
                             {isManager ? (
                                 <input 
                                     type="number"
-                                    value={baseSalary} 
-                                    onChange={(e) => setBaseSalary(e.target.value)} 
+                                value={getMonthlyBaseSalary(baseSalary)} 
+                                onChange={(e) => setBaseSalary((parseFloat(e.target.value) || 0) * 12)} 
                                     className="w-full text-right font-bold text-2xl bg-white border border-blue-200 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
                                 />
                             ) : (
                                 <div className="text-2xl font-black text-blue-900">
-                                    ${parseFloat(baseSalary).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ${getMonthlyBaseSalary(baseSalary).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                             )}
                         </div>
@@ -511,7 +616,7 @@ export default function Payroll({ userRole, currentUserId }) {
                             
                             {earningsList.map((item, index) => {
                                 const isEditing = editingItem?.type === 'earnings' && editingItem?.index === index;
-                                const calculatedAmount = calculateItemAmount(item, baseSalary);
+                              const calculatedAmount = calculateItemAmount(item, calculateEditorTotals().gross);
                                 
                                 return (
                                     <div 
@@ -603,7 +708,7 @@ export default function Payroll({ userRole, currentUserId }) {
 
                             {deductionsList.map((item, index) => {
                                 const isEditing = editingItem?.type === 'deductions' && editingItem?.index === index;
-                                const calculatedAmount = calculateItemAmount(item, baseSalary);
+                              const calculatedAmount = calculateItemAmount(item, calculateEditorTotals().gross);
                                 
                                 return (
                                     <div 

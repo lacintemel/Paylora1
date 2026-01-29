@@ -147,7 +147,8 @@ export const getApprovedLeavesForPeriod = async (employeeId, period) => {
 export const calculateHourlyPayment = (hourlyRate, workedHours, baseSalary) => {
   if (!hourlyRate && baseSalary) {
     // Eğer saatlik ücret belirtilmemişse, temel maaştan hesapla (160 saat/ay)
-    const calculatedHourly = baseSalary / 160;
+    const monthlyBase = (baseSalary || 0) / 12;
+    const calculatedHourly = monthlyBase / 160;
     return workedHours * calculatedHourly;
   }
   return workedHours * hourlyRate;
@@ -175,7 +176,8 @@ export const calculateCompletePayroll = (payroll, attendanceData = {}) => {
   const leaveRecords = attendanceData.leave_records || payroll.leave_details || [];
   
   const baseSalary = payroll.base_salary || 0;
-  const hourlyRate = payroll.hourly_rate || baseSalary / 160;
+  const monthlyBase = (baseSalary || 0) / 12;
+  const hourlyRate = payroll.hourly_rate || monthlyBase / 160;
   
   // Saat bazlı hesaplama
   const hourlyPayment = calculateHourlyPayment(hourlyRate, workedHours, baseSalary);
@@ -187,7 +189,7 @@ export const calculateCompletePayroll = (payroll, attendanceData = {}) => {
   };
   
   const totalEarnings = (payroll.earnings_details || []).reduce(
-    (acc, item) => acc + calculateItemAmount(item, baseSalary),
+    (acc, item) => acc + calculateItemAmount(item, hourlyPayment),
     0
   );
   
@@ -200,7 +202,7 @@ export const calculateCompletePayroll = (payroll, attendanceData = {}) => {
       const isLegal = ['SGK', 'Vergi', 'Gelir', 'Damga', 'Issizlik'].some(word =>
         item.name.includes(word)
       );
-      const amount = calculateItemAmount(item, baseSalary);
+      const amount = calculateItemAmount(item, hourlyPayment);
       
       if (isLegal) {
         legalDeductions += amount;
