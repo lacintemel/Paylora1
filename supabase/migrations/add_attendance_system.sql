@@ -198,18 +198,49 @@ SELECT
   (SELECT COUNT(DISTINCT date) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31'),
   (SELECT COALESCE(SUM(worked_hours), 0) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31'),
   ROUND((e.salary / 160)::numeric, 2),
+  -- EARNINGS: Fazla mesai varsa otomatik ekle
   jsonb_build_array(
     jsonb_build_object('id', 'bonus', 'name', 'İkramiye / Bonus', 'type', 'fixed', 'value', 0),
-    jsonb_build_object('id', 'overtime', 'name', 'Fazla Mesai', 'type', 'fixed', 'value', 0),
+    jsonb_build_object(
+      'id', 'overtime', 
+      'name', 'Fazla Mesai', 
+      'type', 'fixed', 
+      'value', 
+      CASE 
+        WHEN (SELECT COALESCE(SUM(worked_hours), 0) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31') > 160 
+        THEN ROUND(
+          ((SELECT COALESCE(SUM(worked_hours), 0) FROM attendance a WHERE a.employee_id = e.id AND a.date BETWEEN '2026-01-01' AND '2026-01-31') - 160) 
+          * (e.salary / 160) * 1.5
+        , 2)
+        ELSE 0 
+      END
+    ),
     jsonb_build_object('id', 'commission', 'name', 'Komisyon', 'type', 'fixed', 'value', 0),
     jsonb_build_object('id', 'premium', 'name', 'Prim', 'type', 'fixed', 'value', 0),
     jsonb_build_object('id', 'tip', 'name', 'Bahşiş (Tip)', 'type', 'fixed', 'value', 0)
   ),
+  -- DEDUCTIONS: Ücretsiz izin varsa kesinti ekle
   jsonb_build_array(
     jsonb_build_object('id', 'sgk', 'name', 'SGK İşçi Payı', 'type', 'percent', 'value', 14),
     jsonb_build_object('id', 'unemployment', 'name', 'İşsizlik Sigortası', 'type', 'percent', 'value', 1),
     jsonb_build_object('id', 'income_tax', 'name', 'Gelir Vergisi', 'type', 'percent', 'value', 15),
     jsonb_build_object('id', 'stamp_tax', 'name', 'Damga Vergisi', 'type', 'percent', 'value', 0.759),
+    jsonb_build_object(
+      'id', 'unpaid_leave', 
+      'name', 'Ücretsiz İzin Kesintisi', 
+      'type', 'fixed', 
+      'value',
+      COALESCE(
+        (SELECT SUM(lr.days * (e.salary / 160) * 8)  -- Günlük kesinti: (aylık maaş / 160 saat) * 8 saat/gün
+         FROM leave_records lr
+         WHERE lr.employee_id = e.id
+           AND lr.leave_type = 'unpaid'
+           AND lr.status = 'Approved'
+           AND lr.start_date <= '2026-01-31'
+           AND lr.end_date >= '2026-01-01'),
+        0
+      )
+    ),
     jsonb_build_object('id', 'advance', 'name', 'Avans Kesintisi', 'type', 'fixed', 'value', 0)
   ),
   COALESCE(
