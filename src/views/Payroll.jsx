@@ -550,9 +550,9 @@ export default function Payroll({ userRole, currentUserId }) {
                         </div>
                         <div className="text-center">
                             <div className="text-2xl font-black text-purple-900">
-                                {attendanceStats.leaves?.length || 0}
+                                {attendanceStats.leaves?.reduce((sum, leave) => sum + (leave.days || 0), 0) || 0}
                             </div>
-                            <div className="text-xs text-purple-700 font-bold mt-1">İzin Türü</div>
+                            <div className="text-xs text-purple-700 font-bold mt-1">İzin Günü</div>
                         </div>
                     </div>
                     
@@ -562,11 +562,11 @@ export default function Payroll({ userRole, currentUserId }) {
                         <div className="font-bold text-purple-800 mb-3 flex items-center gap-2">
                           <Calendar className="w-4 h-4"/> İzin Detayları
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
                           {attendanceStats.leaves.map((leave, idx) => (
-                            <div key={idx} className="bg-white/70 p-2 rounded-lg text-xs">
+                            <div key={idx} className="bg-white/70 p-3 rounded-lg text-xs border-l-2 border-purple-400">
                               <div className="font-bold text-purple-800">{leave.leave_type || 'İzin'}</div>
-                              <div className="text-purple-700">{leave.days} gün</div>
+                              <div className="text-purple-700 text-xs mt-1">{leave.start_date} - {leave.end_date}</div>
                             </div>
                           ))}
                         </div>
