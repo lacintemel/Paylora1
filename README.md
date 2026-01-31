@@ -1,8 +1,8 @@
-# 💼 Paylora - Modern İnsan Kaynakları Yönetim Sistemi
+# 💼 PayMaki - Modern İnsan Kaynakları Yönetim Sistemi
 
 <div align="center">
 
-![Paylora Banner](https://img.shields.io/badge/Paylora-HR%20Management-blue?style=for-the-badge)
+![PayMaki Banner](https://img.shields.io/badge/-HR%20Management-blue?style=for-the-badge)
 ![React](https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react)
 ![Supabase](https://img.shields.io/badge/Supabase-Backend-3ECF8E?style=for-the-badge&logo=supabase)
 ![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC?style=for-the-badge&logo=tailwind-css)
@@ -30,7 +30,7 @@
 
 ## 🎯 Genel Bakış
 
-**Paylora**, modern işletmelerin İnsan Kaynakları süreçlerini dijital ortamda yönetmesini sağlayan kapsamlı bir web uygulamasıdır.
+****, modern işletmelerin İnsan Kaynakları süreçlerini dijital ortamda yönetmesini sağlayan kapsamlı bir web uygulamasıdır.
 
 ### Temel Hedefler:
 - ✅ Çalışan bordro süreçlerini otomatikleştirmek
@@ -141,8 +141,8 @@
 
 ### 1. Klonlama
 ```bash
-git clone https://github.com/your-username/paylora.git
-cd paylora
+git clone https://github.com/your-username/.git
+cd 
 ```
 
 ### 2. Bağımlılıkları Yükle
@@ -208,9 +208,9 @@ company_settings
 
 ### Giriş Yapma
 ```
-Genel Müdür: ahmet.yilmaz@paylora.com
-İK Müdürü:   ayse.demir@paylora.com
-Çalışan:     mehmet.kaya@paylora.com
+Genel Müdür: ahmet.yilmaz@.com
+İK Müdürü:   ayse.demir@.com
+Çalışan:     mehmet.kaya@.com
 ```
 > ⚠️ Şifreler Supabase Auth'da manuel oluşturulmalı
 
@@ -328,11 +328,11 @@ Bu proje özel kullanım içindir. Ticari kullanım için izin gereklidir.
 
 ## 👨‍💻 Geliştirici
 
-**Paylora Development Team**
+** Development Team**
 
-- 📧 Email: info@paylora.com
-- 🌐 Website: [paylora.com](https://paylora.com)
-- 💼 LinkedIn: [Paylora](https://linkedin.com/company/paylora)
+- 📧 Email: info@.com
+- 🌐 Website: [.com](https://.com)
+- 💼 LinkedIn: [](https://linkedin.com/company/)
 
 ---
 
@@ -347,18 +347,18 @@ Bu proje özel kullanım içindir. Ticari kullanım için izin gereklidir.
 
 ## 📊 İstatistikler
 
-![GitHub repo size](https://img.shields.io/github/repo-size/your-username/paylora)
-![GitHub last commit](https://img.shields.io/github/last-commit/your-username/paylora)
-![GitHub issues](https://img.shields.io/github/issues/your-username/paylora)
+![GitHub repo size](https://img.shields.io/github/repo-size/your-username/)
+![GitHub last commit](https://img.shields.io/github/last-commit/your-username/)
+![GitHub issues](https://img.shields.io/github/issues/your-username/)
 
 ---
 
 <div align="center">
 
-**Paylora ile İK süreçlerinizi dijitalleştirin! 🚀**
+** ile İK süreçlerinizi dijitalleştirin! 🚀**
 
-Made with ❤️ by Paylora Team
+Made with ❤️ by  Team
 
-[⬆ Başa Dön](#-paylora---modern-insan-kaynakları-yönetim-sistemi)
+[⬆ Başa Dön](#----modern-insan-kaynakları-yönetim-sistemi)
 
 </div>
